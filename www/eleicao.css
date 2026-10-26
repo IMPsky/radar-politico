@@ -1,0 +1,60 @@
+/* Tela "Votação em tempo real" — segue o modelo de apuração (fundo escuro, barra dos candidatos e mapa) */
+.ele { padding: 14px 14px 30px; max-width: 760px; margin: 0 auto; background: #050806; min-height: 100vh; }
+.ele-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 2px 14px; }
+.ele-head h2 { margin: 0; font-size: 20px; font-family: Georgia, "Times New Roman", serif; font-weight: 500; color: #fff; line-height: 1.2; }
+.ele-head .chip { flex: none; font-size: 12px; padding: 4px 10px; border-radius: 12px; background: #1b211d; color: #cfd8d2; border: 1px solid #2c362f; }
+.ele-msg { padding: 26px 14px; text-align: center; color: #a9b8ae; background: #0d120f; border-radius: 14px; }
+
+/* duelo */
+.duel { margin-bottom: 6px; }
+.duel-cands { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.dc { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.dc.r { flex-direction: row-reverse; text-align: right; }
+.dc-photo { flex: none; width: 54px; height: 54px; border-radius: 10px; overflow: hidden; background: var(--pc); }
+.dc-photo img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.dc-txt { min-width: 0; display: flex; flex-direction: column; }
+.dc-txt strong { font-size: 17px; color: #fff; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; }
+.dc-txt small { color: #c9d3cc; font-size: 14px; margin-top: 3px; }
+.dc .pt { display: inline-block; font-size: 10.5px; font-weight: 800; color: #fff; padding: 1px 5px; border-radius: 4px; margin-right: 3px; }
+.dc .ok { color: #3ddc84; font-size: 14px; }
+.duel-bar { position: relative; display: flex; height: 46px; border-radius: 10px; overflow: hidden; background: #222; }
+.duel-bar .seg { display: flex; align-items: center; gap: 8px; padding: 0 12px; color: #fff; white-space: nowrap; overflow: hidden; transition: width .6s ease; }
+.duel-bar .seg.r { justify-content: flex-end; }
+.duel-bar b { font-size: 22px; font-weight: 800; letter-spacing: -.5px; }
+.duel-bar span { font-size: 13px; opacity: .9; }
+.duel-bar .mid { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: #fff; transform: translateX(-1px); }
+.duel.small .duel-bar { height: 36px; }
+.duel.small .duel-bar b { font-size: 17px; }
+.duel.small .dc-photo { width: 42px; height: 42px; }
+.duel.small .dc-txt strong { font-size: 15px; }
+.others { margin-top: 10px; display: grid; gap: 6px; }
+.oth { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: #dfe7e2; }
+.oth i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.oth span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oth small { color: #93a39a; }
+
+/* abas */
+.ele-tabs { display: inline-flex; gap: 4px; padding: 5px; margin: 18px 0 6px; border-radius: 26px; background: #0f1411; border: 1px solid #262e29; }
+.ele-tabs button { padding: 10px 18px; border-radius: 22px; color: #cfd8d2; font-size: 15px; }
+.ele-tabs button.on { background: #2a322d; color: #fff; font-weight: 600; box-shadow: inset 0 0 0 1px #3a443e; }
+
+/* mapa */
+.ele-map { margin: 4px -4px 0; }
+.br-map { width: 100%; height: auto; display: block; }
+.br-map path { stroke: #050806; stroke-width: 1.2; cursor: pointer; transition: fill .4s; }
+.br-map path.sel { stroke: #ffdf00; stroke-width: 3; }
+.br-map text { fill: #fff; font: 600 15px system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; pointer-events: none; paint-order: stroke; stroke: rgba(0,0,0,.35); stroke-width: 2px; }
+.br-map text.tiny { font-size: 10px; }
+.br-map line { stroke: #9aa59f; stroke-width: 1; }
+.br-map rect { cursor: pointer; }
+.ele-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; margin-top: 8px; border-radius: 16px; background: #0f1411; border: 1px solid #262e29; color: #dfe7e2; font-size: 15px; }
+.ele-legend i { display: inline-block; width: 14px; height: 14px; border-radius: 4px; margin-right: 6px; vertical-align: -2px; }
+.ele-legend b { margin-left: 4px; }
+.ele-legend em { font-style: normal; color: #93a39a; }
+.ele-hint { color: #7f8f86; font-size: 12.5px; text-align: center; margin: 10px 0 0; }
+.ele-uf { margin-top: 14px; padding: 14px; border-radius: 16px; background: #0d120f; border: 1px solid #262e29; }
+.ele-uf h3 { margin: 0 0 10px; font-size: 15px; color: #fff; }
+.ele-foot { margin-top: 18px; text-align: center; color: #a9b8ae; font-size: 13px; line-height: 1.6; }
+.ele-foot .refresh { color: #ffdf00; font-weight: 700; cursor: pointer; display: inline-block; padding: 6px; }
+.ele-foot small { display: block; color: #6f7e75; font-size: 11px; margin-top: 4px; }
+.ele-foot .err { color: #ffae6b; }

@@ -209,6 +209,8 @@
   function unreadCount() { return store.get('feed', []).filter(f => !f.read).length; }
 
   function render() {
+    if (window.Eleicao && view.name !== 'election') Eleicao.unmount();
+    if (view.name === 'election') return Eleicao.mount($app, topbar('Votação em tempo real', true));
     if (view.name === 'home') renderHome();
     else if (view.name === 'source') renderSource(view.id);
     else if (view.name === 'feed') renderFeed();
@@ -263,12 +265,12 @@
   function cardHTML(s, feed) {
     const n = feed.filter(f => f.sourceId === s.id && !f.read).length;
     const st = store.get('status:' + s.id, null);
-    return `<button class="card" data-act="source" data-id="${esc(s.id)}" style="--c:${s.color}">
+    return `<button class="card${s.special ? ' wide' : ''}" data-act="source" data-id="${esc(s.id)}" style="--c:${s.color}">
       <span class="card-icon">${s.icon}</span>
       ${n ? `<span class="badge small">${n}</span>` : ''}
       <strong>${esc(s.title)}</strong>
       <small>${esc(s.subtitle)}</small>
-      ${s.monitors.length ? `<span class="card-status ${st && st.err ? 'err' : ''}">${st ? (st.err ? 'sem conexão com o site' : 'atualizado ' + ago(st.at)) : 'monitorando'}</span>` : '<span class="card-status">acesso direto</span>'}
+      ${s.monitors.length ? `<span class="card-status ${st && st.err ? 'err' : ''}">${st ? (st.err ? 'sem conexão com o site' : 'atualizado ' + ago(st.at)) : 'monitorando'}</span>` : (s.special ? '<span class="card-status live">● ao vivo · TSE</span>' : '<span class="card-status">acesso direto</span>')}
     </button>`;
   }
 
@@ -386,7 +388,7 @@
     if (act === 'back') return back();
     if (act === 'settings') return go({ name: 'settings' });
     if (act === 'feed') return go({ name: 'feed', filter: 'all' });
-    if (act === 'source') return go({ name: 'source', id: el.dataset.id });
+    if (act === 'source') { const s = byId(el.dataset.id); if (s && s.special === 'election') return go({ name: 'election' }); return go({ name: 'source', id: el.dataset.id }); }
     if (act === 'open') return openUrl(el.dataset.url);
     if (act === 'filter') { view.filter = el.dataset.f; return render(); }
     if (act === 'feed-open') {

@@ -2,9 +2,9 @@
   "appId": "br.radarpolitico.app",
   "appName": "Radar Político",
   "webDir": "www",
-  "android": { "backgroundColor": "#0b1626" },
+  "android": { "backgroundColor": "#05170f" },
   "plugins": {
     "CapacitorHttp": { "enabled": true },
-    "LocalNotifications": { "iconColor": "#f2b632" }
+    "LocalNotifications": { "iconColor": "#009c3b" }
   }
 }

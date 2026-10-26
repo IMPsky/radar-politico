@@ -8,6 +8,12 @@
 const CABO_IBGE = '2602902'; // código IBGE de Cabo de Santo Agostinho - PE
 
 const SOURCES = [
+  // ---------------- ELEIÇÕES AO VIVO ----------------
+  {
+    id: 'eleicoes', group: 'Eleições', icon: '🗳️', color: '#009c3b', special: 'election',
+    title: 'Votação em tempo real', subtitle: 'Apuração oficial do TSE — presidente e governadores, com mapa por estado',
+    desc: '', links: [], monitors: [],
+  },
   // ---------------- JUSTIÇA ELEITORAL ----------------
   {
     id: 'tse', group: 'Para sua candidatura', icon: '⚖️', color: '#1f4e9c',
@@ -185,4 +191,4 @@ const SOURCES = [
   },
 ];
 
-const GROUP_ORDER = ['Para sua candidatura', 'Leis e Câmara', 'Dinheiro público e transparência', 'Partidos', 'Meus sites'];
+const GROUP_ORDER = ['Eleições', 'Para sua candidatura', 'Leis e Câmara', 'Dinheiro público e transparência', 'Partidos', 'Meus sites'];
