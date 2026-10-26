@@ -56,13 +56,76 @@
 
   async function getText(url) {
     // No APK, o fetch passa pelo HTTP nativo (CapacitorHttp) e lê qualquer site oficial.
-    const res = await withTimeout(fetch(url, { headers: { 'Accept': 'text/html,application/json;q=0.9,*/*;q=0.8' } }), FETCH_TIMEOUT);
+    const res = await withTimeout(fetch(url, { headers: {
+      'Accept': 'text/html,application/json;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36',
+    } }), FETCH_TIMEOUT);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return await res.text();
   }
 
-  function openUrl(url) {
-    if (isNative && Plugins.Browser) Plugins.Browser.open({ url, toolbarColor: '#0d1b2e' });
+  // ---------- favoritos ----------
+  const favs = () => store.get('favorites', []);
+  const isFav = url => favs().some(f => f.url === url);
+  function toggleFav(url, title) {
+    if (!url) return false;
+    const list = favs();
+    const i = list.findIndex(f => f.url === url);
+    if (i >= 0) { list.splice(i, 1); store.set('favorites', list); toast('Removido dos Favoritos'); return false; }
+    list.unshift({ url, title: (title || '').trim() || hostOf(url), at: Date.now() });
+    store.set('favorites', list.slice(0, 300));
+    toast('⭐ Salvo nos Favoritos');
+    return true;
+  }
+  function removeFav(url) { store.set('favorites', favs().filter(f => f.url !== url)); }
+  function favStar(url, title) {
+    return `<b class="fav ${isFav(url) ? 'on' : ''}" data-act="fav" data-url="${esc(url)}" data-title="${esc(title || '')}" aria-label="Salvar nos Favoritos">${isFav(url) ? '★' : '☆'}</b>`;
+  }
+
+  // navegador interno com botão ⭐ "Salvar página" na barra
+  const IAB = Plugins.InAppBrowser;
+  const iab = { url: '', title: '', pending: null };
+  function iabToast(msg) {
+    if (!IAB) return;
+    const code = `(function(){var d=document.createElement('div');d.textContent=${JSON.stringify(msg)};d.style.cssText='position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2147483647;background:#072014;color:#ffdf00;font:600 15px system-ui,sans-serif;padding:12px 18px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.4);border:1px solid #ffdf00';document.body.appendChild(d);setTimeout(function(){d.remove()},2200)})()`;
+    IAB.executeScript({ code }).catch(() => {});
+  }
+  function favFromBrowser(url, title) {
+    const saved = toggleFav(url, title);
+    iabToast(saved ? '⭐ Página salva nos Favoritos' : 'Removida dos Favoritos');
+    render();
+  }
+  if (isNative && IAB) {
+    IAB.addListener('urlChangeEvent', ev => { if (ev && ev.url) { iab.url = ev.url; iab.title = ''; } });
+    IAB.addListener('browserPageLoaded', () => {
+      IAB.executeScript({ code: "window.mobileApp&&window.mobileApp.postMessage(JSON.stringify({detail:{kind:'info',t:document.title,u:location.href}}))" }).catch(() => {});
+    });
+    IAB.addListener('messageFromWebview', ev => {
+      let d = ev && ev.detail;
+      if (!d && ev && ev.rawMessage) { try { d = JSON.parse(ev.rawMessage).detail; } catch (e) { d = null; } }
+      if (!d) return;
+      if (d.u) iab.url = d.u;
+      if (d.t) iab.title = d.t;
+      if (d.kind === 'fav' && iab.pending) { clearTimeout(iab.pending); iab.pending = null; favFromBrowser(d.u || iab.url, d.t || iab.title); }
+    });
+    IAB.addListener('buttonNearDoneClick', () => {
+      if (iab.pending) return;
+      iab.pending = setTimeout(() => { iab.pending = null; favFromBrowser(iab.url, iab.title); }, 1500);
+      IAB.executeScript({ code: "window.mobileApp&&window.mobileApp.postMessage(JSON.stringify({detail:{kind:'fav',t:document.title,u:location.href}}))" }).catch(() => {});
+    });
+    IAB.addListener('closeEvent', () => render());
+  }
+
+  function openUrl(url, title) {
+    if (isNative && IAB) {
+      iab.url = url; iab.title = title || '';
+      IAB.openWebView({
+        url, title: title || hostOf(url), toolbarColor: '#072014', toolbarTextColor: '#ffffff', showReloadButton: true,
+        activeNativeNavigationForWebview: true,
+        buttonNearDone: { ios: { iconType: 'sf-symbol', icon: 'star' }, android: { iconType: 'asset', icon: 'public/star.svg', width: 26, height: 26 } },
+      }).catch(() => { if (Plugins.Browser) Plugins.Browser.open({ url, toolbarColor: '#072014' }); });
+    } else if (isNative && Plugins.Browser) Plugins.Browser.open({ url, toolbarColor: '#072014' });
     else window.open(url, '_blank', 'noopener');
   }
 
@@ -215,6 +278,7 @@
     else if (view.name === 'source') renderSource(view.id);
     else if (view.name === 'feed') renderFeed();
     else if (view.name === 'settings') renderSettings();
+    else if (view.name === 'favorites') renderFavorites();
   }
 
   function topbar(title, withBack, right) {
@@ -270,7 +334,7 @@
       ${n ? `<span class="badge small">${n}</span>` : ''}
       <strong>${esc(s.title)}</strong>
       <small>${esc(s.subtitle)}</small>
-      ${s.monitors.length ? `<span class="card-status ${st && st.err ? 'err' : ''}">${st ? (st.err ? 'sem conexão com o site' : 'atualizado ' + ago(st.at)) : 'monitorando'}</span>` : (s.special ? '<span class="card-status live">● ao vivo · TSE</span>' : '<span class="card-status">acesso direto</span>')}
+      ${s.monitors.length ? `<span class="card-status ${st && st.err ? 'err' : ''}">${st ? (st.err ? 'falha: ' + esc(String(st.err).slice(0, 38)) : 'atualizado ' + ago(st.at)) : 'monitorando'}</span>` : (s.special === 'favorites' ? `<span class="card-status">${favs().length} página(s) salva(s)</span>` : s.special ? '<span class="card-status live">● ao vivo · TSE</span>' : '<span class="card-status">acesso direto</span>')}
     </button>`;
   }
 
@@ -298,16 +362,16 @@
 
         <h3>Acesso oficial</h3>
         <div class="links">
-          ${s.links.map(l => `<button class="link-row" data-act="open" data-url="${esc(l.url)}"><span>${esc(l.label)}</span><small>${esc(hostOf(l.url))}</small><b>↗</b></button>`).join('')}
+          ${s.links.map(l => `<button class="link-row" data-act="open" data-url="${esc(l.url)}" data-title="${esc(l.label)}"><span>${esc(l.label)}</span><small>${esc(hostOf(l.url))}</small>${favStar(l.url, l.label)}<b>↗</b></button>`).join('')}
         </div>
 
         ${s.monitors.length ? `
           <h3>Conteúdo mais recente <small class="h-meta">${st ? 'verificado ' + ago(st.at) : ''}</small></h3>
           ${st && st.err && !latest.length ? `<div class="warn">Não foi possível ler o site agora (${esc(st.err)}). Use os botões acima para abrir o site oficial.</div>` : ''}
           ${latest.length ? `<div class="items">${latest.map(it => `
-            <button class="item ${newIds.has(it.id) ? 'is-new' : ''}" data-act="open" data-url="${esc(it.url)}">
+            <button class="item ${newIds.has(it.id) ? 'is-new' : ''}" data-act="open" data-url="${esc(it.url)}" data-title="${esc(it.title)}">
               ${newIds.has(it.id) ? '<span class="tag">NOVO</span>' : ''}
-              <span class="item-title">${esc(it.title)}</span>
+              <span class="item-title">${esc(it.title)}</span>${favStar(it.url, it.title)}
               <small>${esc(it.meta || hostOf(it.url))}</small>
             </button>`).join('')}</div>`
             : (!st ? '<div class="muted">Carregando conteúdo dos sites oficiais…</div>' : '')}
@@ -338,6 +402,22 @@
             ${f.detail ? `<div class="fi-detail">${esc(f.detail)}</div>` : ''}
           </button>`;
         }).join('') : `<div class="empty"><div class="empty-icon">🗞️</div><p>${feed.length ? 'Nada neste filtro.' : 'Ainda não há novidades.'}</p><small>O app compara os sites oficiais a cada verificação. Quando algo novo for publicado ou uma lei for alterada, aparece aqui.</small></div>`}
+      </main>`;
+  }
+
+  function renderFavorites() {
+    const list = favs();
+    $app.innerHTML = topbar('Favoritos', true) + `
+      <main class="detail">
+        <p class="desc">Para salvar uma página: abra qualquer site pelo app e toque na <b>⭐</b> no canto de cima. Você também pode tocar na ☆ ao lado dos links dentro dos cards.</p>
+        ${list.length ? `<div class="links">${list.map(f => `
+          <div class="fav-row">
+            <button class="fav-open" data-act="open" data-url="${esc(f.url)}" data-title="${esc(f.title)}">
+              <span>${esc(f.title)}</span><small>${esc(hostOf(f.url))} · salvo ${ago(f.at)}</small>
+            </button>
+            <button class="fav-del" data-act="fav-remove" data-url="${esc(f.url)}" aria-label="Remover dos Favoritos">✕</button>
+          </div>`).join('')}</div>`
+          : `<div class="empty"><div class="empty-icon">⭐</div><p>Nenhuma página salva ainda.</p><small>Abra um site pelo app e toque na estrela para guardar aqui.</small></div>`}
       </main>`;
   }
 
@@ -388,8 +468,10 @@
     if (act === 'back') return back();
     if (act === 'settings') return go({ name: 'settings' });
     if (act === 'feed') return go({ name: 'feed', filter: 'all' });
-    if (act === 'source') { const s = byId(el.dataset.id); if (s && s.special === 'election') return go({ name: 'election' }); return go({ name: 'source', id: el.dataset.id }); }
-    if (act === 'open') return openUrl(el.dataset.url);
+    if (act === 'source') { const s = byId(el.dataset.id); if (s && s.special === 'election') return go({ name: 'election' }); if (s && s.special === 'favorites') return go({ name: 'favorites' }); return go({ name: 'source', id: el.dataset.id }); }
+    if (act === 'open') return openUrl(el.dataset.url, el.dataset.title);
+    if (act === 'fav') { toggleFav(el.dataset.url, el.dataset.title); render(); return; }
+    if (act === 'fav-remove') { removeFav(el.dataset.url); render(); toast('Removido dos Favoritos'); return; }
     if (act === 'filter') { view.filter = el.dataset.f; return render(); }
     if (act === 'feed-open') {
       const feed = store.get('feed', []);

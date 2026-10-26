@@ -14,6 +14,11 @@ const SOURCES = [
     title: 'Votação em tempo real', subtitle: 'Apuração oficial do TSE — presidente e governadores, com mapa por estado',
     desc: '', links: [], monitors: [],
   },
+  {
+    id: 'favoritos', group: 'Favoritos', icon: '⭐', color: '#ffdf00', special: 'favorites',
+    title: 'Favoritos', subtitle: 'Páginas que você salvou para acessar direto',
+    desc: '', links: [], monitors: [],
+  },
   // ---------------- JUSTIÇA ELEITORAL ----------------
   {
     id: 'tse', group: 'Para sua candidatura', icon: '⚖️', color: '#1f4e9c',
@@ -137,7 +142,7 @@ const SOURCES = [
       { label: 'Portal da Transparência', url: 'https://portaldatransparencia.gov.br/' },
     ],
     monitors: [
-      { url: 'https://portaldatransparencia.gov.br/noticias', type: 'links' },
+      { url: 'https://portaldatransparencia.gov.br/', type: 'links' },
     ],
   },
   {
@@ -149,7 +154,8 @@ const SOURCES = [
       { label: 'Tome Conta (painel dos municípios)', url: 'https://www.tce.pe.gov.br/internet/index.php/tome-conta' },
     ],
     monitors: [
-      { url: 'https://www.tce.pe.gov.br/', type: 'links' },
+      { url: 'https://www.tce.pe.gov.br/internet/index.php/noticias', type: 'links' },
+      { url: 'https://www.tce.pe.gov.br/internet/', type: 'links' },
     ],
   },
   {
@@ -191,4 +197,4 @@ const SOURCES = [
   },
 ];
 
-const GROUP_ORDER = ['Eleições', 'Para sua candidatura', 'Leis e Câmara', 'Dinheiro público e transparência', 'Partidos', 'Meus sites'];
+const GROUP_ORDER = ['Eleições', 'Favoritos', 'Para sua candidatura', 'Leis e Câmara', 'Dinheiro público e transparência', 'Partidos', 'Meus sites'];
