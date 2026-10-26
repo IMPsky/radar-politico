@@ -24,8 +24,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Instalar dependencias
         run: npm install --no-audit --no-fund
 
