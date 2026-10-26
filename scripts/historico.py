@@ -52,13 +52,21 @@ def download(ano, det=False):
     raise SystemExit('nao foi possivel baixar ' + url)
 
 
+def pick_files(names):
+    """Arquivos por estado + um arquivo nacional (BR/BRASIL), usado só para Presidente."""
+    por_uf = [n for n in names if re.search(r'_([A-Z]{2})\.csv$', n, re.I) and not re.search(r'_(BR|BRASIL)\.csv$', n, re.I)]
+    nac = [n for n in names if re.search(r'_BR\.csv$', n, re.I)] or [n for n in names if re.search(r'_BRASIL\.csv$', n, re.I)]
+    if not por_uf:
+        return [(n, False) for n in names]
+    return [(n, False) for n in por_uf] + [(n, True) for n in nac[:1]]
+
+
 def rows(zpath):
     with zipfile.ZipFile(zpath) as z:
         names = [n for n in z.namelist() if n.lower().endswith('.csv')]
-        por_uf = [n for n in names if re.search(r'_([A-Z]{2})\.csv$', n, re.I) and not re.search(r'_(BR|BRASIL)\.csv$', n, re.I)]
-        usar = por_uf or names
-        print('  arquivos:', len(usar), 'de', len(names), flush=True)
-        for n in usar:
+        usar = pick_files(names)
+        print('  arquivos:', [n.split('/')[-1] for n, _ in usar if _] or len(usar), len(usar), 'de', len(names), flush=True)
+        for n, so_pres in usar:
             with z.open(n) as raw:
                 txt = io.TextIOWrapper(raw, encoding='latin-1', newline='')
                 rd = csv.reader(txt, delimiter=';', quotechar='"')
@@ -71,7 +79,10 @@ def rows(zpath):
                 iv = idx.get('QT_VOTOS_NOMINAIS_VALIDOS', idx.get('QT_VOTOS_NOMINAIS'))
                 isit = idx.get('DS_SIT_TOT_TURNO')
                 imun, inm = idx.get('CD_MUNICIPIO'), idx.get('NM_MUNICIPIO')
+                ic = idx['CD_CARGO']
                 for r in rd:
+                    if (so_pres and r[ic] != '1') or (not so_pres and r[ic] == '1' and any(x for x, s in usar if s)):
+                        continue
                     try:
                         v = int(r[iv] or 0)
                     except (ValueError, IndexError):
@@ -102,8 +113,9 @@ def detalhes(ano, municipal):
         return {}
     with zipfile.ZipFile(zpath) as z:
         names = [n for n in z.namelist() if n.lower().endswith('.csv')]
-        por_uf = [n for n in names if re.search(r'_([A-Z]{2})\.csv$', n, re.I) and not re.search(r'_(BR|BRASIL)\.csv$', n, re.I)]
-        for n in (por_uf or names):
+        usar = pick_files(names)
+        tem_nac = any(s for _, s in usar)
+        for n, so_pres in usar:
             with z.open(n) as raw:
                 rd = csv.reader(io.TextIOWrapper(raw, encoding='latin-1', newline=''), delimiter=';', quotechar='"')
                 idx = {h.strip().upper(): i for i, h in enumerate(next(rd))}
@@ -118,7 +130,7 @@ def detalhes(ano, municipal):
                 for r in rd:
                     try:
                         c = r[ic]
-                        if c not in CARGOS:
+                        if c not in CARGOS or (so_pres and c != '1') or (not so_pres and c == '1' and tem_nac):
                             continue
                         vals = [int(r[i] or 0) if i is not None else 0 for i in cols]
                         if cols[3] is None:
