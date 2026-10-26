@@ -1,0 +1,19 @@
+{
+  "name": "radar-politico",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Radar Político - cards com informações atualizadas de sites oficiais",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/local-notifications": "^8.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  }
+}
