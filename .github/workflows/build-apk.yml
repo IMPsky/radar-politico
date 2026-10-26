@@ -37,7 +37,7 @@ jobs:
           python3 scripts/icons.py
 
       - name: Corrigir certificados de sites do governo
-        run: python3 scripts/certs.py || echo "aviso: verificacao de certificados falhou"
+        run: python3 scripts/certs.py || echo "aviso - verificacao de certificados falhou"
 
       - name: Copiar o app para o Android
         run: npx cap sync android
