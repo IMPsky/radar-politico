@@ -76,7 +76,11 @@ LIXO = re.compile(r'(Presid[êe]ncia da Rep[úu]blica|Casa Civil|Subchefia para 
 
 
 def baixar(url):
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (radar-politico; monitor de leis)', 'Accept-Language': 'pt-BR'})
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.5',
+    })
     with urllib.request.urlopen(req, timeout=120) as r:
         raw = r.read()
         cs = r.headers.get_content_charset()
@@ -168,9 +172,15 @@ def main():
     for lid, nome, url in LEIS:
         spath = os.path.join(OUT, f'{lid}.json')
         snap = carregar(spath, None)
+        if snap and len(snap.get('artigos', {})) <= 1:
+            snap = None  # versão anterior inválida (ex.: página de bloqueio)
         try:
             html = baixar(url)
+            if re.search(r'requisi[çc][ãa]o foi bloqueada|bloqueio\.de\.aplicacoes', html, re.I):
+                raise RuntimeError('o site do Planalto bloqueou a leitura automática')
             arts = artigos(html)
+            if len(arts) - (1 if 'Preâmbulo' in arts else 0) < 3:
+                raise RuntimeError('página sem artigos reconhecíveis')
         except Exception as e:
             print(f'[erro] {nome}: {e}', flush=True)
             st = status.get(lid, {'id': lid, 'nome': nome, 'url': url})
