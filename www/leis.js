@@ -164,8 +164,178 @@
     return `${parts.join(', ') || 'texto alterado'}${arts ? ' — ' + arts : ''}${ev.total > 4 ? '…' : ''}. Toque para ver o que mudou e a Interpretação.`;
   }
 
+  // ---------- conferência feita pelo próprio celular ----------
+  // O Planalto bloqueia os servidores do GitHub, então o app baixa as leis direto do celular,
+  // separa artigo por artigo e compara com a última versão guardada no aparelho.
+  const LEIS = [
+    ['cf88', 'Constituição Federal', 'https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm'],
+    ['l9504', 'Lei das Eleições (Lei 9.504/1997)', 'https://www.planalto.gov.br/ccivil_03/leis/l9504.htm'],
+    ['lc64', 'Lei de Inelegibilidade (LC 64/1990)', 'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp64.htm'],
+    ['lc135', 'Lei da Ficha Limpa (LC 135/2010)', 'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp135.htm'],
+    ['l9096', 'Lei dos Partidos Políticos (Lei 9.096/1995)', 'https://www.planalto.gov.br/ccivil_03/leis/l9096.htm'],
+    ['l4737', 'Código Eleitoral (Lei 4.737/1965)', 'https://www.planalto.gov.br/ccivil_03/leis/l4737compilado.htm'],
+  ];
+  const LOCAL_KEY = 'leisLocal';
+  const INTERVALO = 6 * 3600e3;
+  const BLOCO = new Set(['P', 'DIV', 'BR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TR', 'TABLE', 'BLOCKQUOTE', 'CENTER', 'TD', 'UL', 'OL']);
+  const PULA = new Set(['STRIKE', 'S', 'DEL', 'SCRIPT', 'STYLE', 'HEAD', 'TITLE']);
+  const ART = /^Art\.?\s*(\d+)\s*(?:[º°ªo]|o\.)?\s*(?:[-–]\s*([A-Z]{1,3}))?(?=[\s.\-–:]|$)/;
+  const TITULO = /^(T[ÍI]TULO|CAP[ÍI]TULO|Se[çc][ãa]o|SE[ÇC][ÃA]O|Subse[çc][ãa]o|LIVRO|PARTE)(?![A-Za-zÀ-ú])/;
+  const LIXO = /(Presid[êe]ncia da Rep[úu]blica|Casa Civil|Subchefia para Assuntos|Secretaria Especial para Assuntos|Este texto n[ãa]o substitui)/i;
+  const MAX_TXT = 20000;
+
+  // banco local (IndexedDB) para guardar o texto completo das leis — o localStorage é pequeno demais
+  function idb() {
+    return new Promise((ok, err) => {
+      const r = indexedDB.open('radar-leis', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('snap');
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => err(r.error);
+    });
+  }
+  async function snapGet(id) {
+    try { const db = await idb(); return await new Promise(ok => { const q = db.transaction('snap').objectStore('snap').get(id); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); } catch (e) { return null; }
+  }
+  async function snapPut(id, v) {
+    try { const db = await idb(); await new Promise(ok => { const t = db.transaction('snap', 'readwrite'); t.objectStore('snap').put(v, id); t.oncomplete = ok; t.onerror = ok; }); } catch (e) { /* sem espaço */ }
+  }
+
+  // baixa os bytes e decodifica com o charset certo (o Planalto usa windows-1252)
+  async function baixarLei(url) {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
+    };
+    let bytes, ctype = '';
+    const P = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp;
+    if (P && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+      const r = await P.request({ url, method: 'GET', headers, responseType: 'arraybuffer', connectTimeout: 60000, readTimeout: 120000 });
+      if (r.status >= 400) throw new Error('HTTP ' + r.status);
+      const h = r.headers || {};
+      ctype = h['Content-Type'] || h['content-type'] || '';
+      if (typeof r.data === 'string') { const b = atob(r.data); bytes = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i); }
+      else bytes = new Uint8Array(r.data);
+    } else {
+      const r = await fetch(url, { headers });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      ctype = r.headers.get('content-type') || '';
+      bytes = new Uint8Array(await r.arrayBuffer());
+    }
+    let cs = (ctype.match(/charset=([\w-]+)/i) || [])[1];
+    if (!cs) { const head = new TextDecoder('latin1').decode(bytes.slice(0, 4000)); cs = (head.match(/charset=["']?([\w-]+)/i) || [])[1] || 'windows-1252'; }
+    if (/^(iso-8859-1|latin-?1)$/i.test(cs)) cs = 'windows-1252';
+    try { return new TextDecoder(cs).decode(bytes); } catch (e) { return new TextDecoder('windows-1252').decode(bytes); }
+  }
+
+  function linhasDe(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const lines = []; let cur = [];
+    const flush = () => { const t = cur.join('').split(/\s+/).filter(Boolean).join(' '); if (t) lines.push(t); cur = []; };
+    (function walk(node) {
+      for (let n = node.firstChild; n; n = n.nextSibling) {
+        if (n.nodeType === 3) { cur.push(n.nodeValue); continue; }
+        if (n.nodeType !== 1) continue;
+        const tag = n.tagName;
+        if (tag === 'BR') { flush(); continue; }
+        const st = (n.getAttribute('style') || '').toLowerCase().replace(/\s/g, '');
+        if (PULA.has(tag) || st.includes('line-through')) { if (BLOCO.has(tag)) flush(); continue; }
+        if (BLOCO.has(tag)) flush();
+        walk(n);
+        if (BLOCO.has(tag)) flush();
+      }
+    })(doc.body || doc.documentElement);
+    flush();
+    return lines;
+  }
+
+  function artigosDe(html) {
+    const arts = { 'Preâmbulo': [] }, ordem = ['Preâmbulo'];
+    let atual = 'Preâmbulo', prefixo = '';
+    for (const ln of linhasDe(html)) {
+      if (atual === 'Preâmbulo' && LIXO.test(ln)) continue;
+      if (/ATO DAS DISPOSI[ÇC][ÕO]ES CONSTITUCIONAIS TRANSIT[ÓO]RIAS/i.test(ln) && ln.length < 80) { prefixo = 'ADCT '; continue; }
+      const m = ln.match(ART);
+      if (m) {
+        let k = `${prefixo}Art. ${m[1]}` + (m[2] ? '-' + m[2].toUpperCase() : '');
+        const base = k; let n = 2;
+        while (arts[k]) k = `${base} (${n++})`;
+        atual = k; arts[k] = []; ordem.push(k);
+      } else if (TITULO.test(ln) || (ln === ln.toUpperCase() && ln !== ln.toLowerCase() && ln.length < 120 && !/^[IVXLC]+\s*[-–]/.test(ln))) continue;
+      arts[atual].push(ln);
+    }
+    const out = {};
+    ordem.forEach(k => { if (arts[k].length) out[k] = arts[k].join('\n'); });
+    return out;
+  }
+
+  const normT = t => t.replace(/[º°]/g, 'o').replace(/ª/g, 'a').replace(/[“”"]/g, '"').replace(/’/g, "'").replace(/[–—]/g, '-').split(/\s+/).filter(Boolean).join(' ');
+  const notasDe = t => t.match(/\((?:Reda[çc][ãa]o dada|Inclu[íi]d[oa]|Revogad[oa]|Acrescid[oa]|Vide|Renumerad[oa]|Regulamento)[^()]*(?:\([^()]*\)[^()]*)*\)/g) || [];
+
+  function compararArts(antigo, novo) {
+    const mud = [];
+    for (const [k, txt] of Object.entries(novo)) {
+      if (k === 'Preâmbulo') continue;
+      if (!(k in antigo)) mud.push({ art: k, tipo: 'incluido', antes: '', depois: txt.slice(0, MAX_TXT), notas: notasDe(txt) });
+      else if (normT(antigo[k]) !== normT(txt)) {
+        const tipo = /revogad/i.test(txt) && !/revogad/i.test(antigo[k]) && txt.length < antigo[k].length ? 'revogado' : 'alterado';
+        const velhas = notasDe(antigo[k]);
+        const nn = notasDe(txt).filter(n => !velhas.includes(n));
+        mud.push({ art: k, tipo, antes: antigo[k].slice(0, MAX_TXT), depois: txt.slice(0, MAX_TXT), notas: nn.length ? nn : notasDe(txt) });
+      }
+    }
+    for (const [k, txt] of Object.entries(antigo)) if (k !== 'Preâmbulo' && !(k in novo)) mud.push({ art: k, tipo: 'removido', antes: txt.slice(0, MAX_TXT), depois: '', notas: [] });
+    return mud;
+  }
+
+  async function conferirNoCelular(store, force) {
+    const loc = store.get(LOCAL_KEY, { leis: {}, eventos: [] });
+    const agora = new Date().toISOString();
+    for (const [id, nome, url] of LEIS) {
+      const st = loc.leis[id];
+      if (!force && st && st.status === 'ok' && Date.now() - Date.parse(st.verificado) < INTERVALO) continue;
+      try {
+        const html = await baixarLei(url);
+        if (/requisi[çc][ãa]o foi bloqueada|bloqueio\.de\.aplicacoes/i.test(html)) throw new Error('o site do Planalto bloqueou a leitura');
+        const arts = artigosDe(html);
+        const n = Object.keys(arts).length - ('Preâmbulo' in arts ? 1 : 0);
+        if (n < 3) throw new Error('página sem artigos reconhecíveis');
+        const snap = await snapGet(id);
+        const nAnt = snap ? Object.keys(snap.artigos).length - 1 : 0;
+        if (snap && nAnt > 1 && n < 0.5 * nAnt) throw new Error('leitura incompleta, mantida a versão anterior');
+        if (snap && nAnt > 1) {
+          const mud = compararArts(snap.artigos, arts);
+          if (mud.length) {
+            const resumo = {}; ['alterado', 'incluido', 'revogado', 'removido'].forEach(t => { resumo[t] = mud.filter(x => x.tipo === t).length; });
+            loc.eventos.unshift({ id: `${id}-cel-${Date.now()}`, lei: id, nome, url, detectado: agora, resumo, mudancas: mud.slice(0, 60), total: mud.length, origem: 'celular' });
+          }
+        }
+        await snapPut(id, { artigos: arts, verificado: agora });
+        loc.leis[id] = { id, nome, url, artigos: n, verificado: agora, status: 'ok' };
+      } catch (e) {
+        loc.leis[id] = Object.assign({}, loc.leis[id] || { id, nome, url }, { status: 'falha ao ler no celular: ' + String(e.message || e).slice(0, 80), tentativa: agora });
+      }
+    }
+    loc.eventos = loc.eventos.slice(0, 25);
+    store.set(LOCAL_KEY, loc);
+    return loc;
+  }
+
   async function runMonitor(mon, key, prev, store, getText) {
-    const data = JSON.parse(await getText(mon.url + '?t=' + Date.now()));
+    let data = { leis: [], eventos: [] };
+    try { data = JSON.parse(await getText(mon.url + '?t=' + Date.now())); } catch (e) { /* segue só com o celular */ }
+    const loc = await conferirNoCelular(store, false);
+    // junta o que o servidor e o celular encontraram (o celular vale quando o servidor foi bloqueado)
+    const porId = {};
+    (data.leis || []).forEach(l => { porId[l.id] = l; });
+    Object.values(loc.leis).forEach(l => { const r = porId[l.id]; if (!r || r.status !== 'ok' || (l.status === 'ok' && Date.parse(l.verificado) > Date.parse(r.verificado || 0))) porId[l.id] = l; });
+    const ordem = LEIS.map(x => x[0]);
+    data.leis = Object.values(porId).sort((a, b) => ordem.indexOf(a.id) - ordem.indexOf(b.id));
+    const vistos = new Set();
+    data.eventos = (data.eventos || []).concat(loc.eventos)
+      .sort((a, b) => Date.parse(b.detectado) - Date.parse(a.detectado))
+      .filter(e => { const k = e.lei + '|' + e.mudancas.map(m => m.art).join(','); if (vistos.has(k)) return false; vistos.add(k); return true; });
+    data.verificado = new Date().toISOString();
     const cut = s => (s && s.length > 12000 ? s.slice(0, 12000) + ' […]' : s);
     store.set(evStoreKey, {
       verificado: data.verificado, leis: data.leis || [],

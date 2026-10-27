@@ -274,12 +274,15 @@
 
   function render() {
     if (window.Eleicao && view.name !== 'election') Eleicao.unmount();
+    if (window.Politicos && view.name !== 'infopoliticos') Politicos.unmount();
+    if (view.name === 'infopoliticos' && window.Politicos) return Politicos.mount($app, topbar('Info Políticos', true));
     if (view.name === 'election') return Eleicao.mount($app, topbar('Votação em tempo real', true));
     if (view.name === 'home') renderHome();
     else if (view.name === 'source') renderSource(view.id);
     else if (view.name === 'feed') renderFeed();
     else if (view.name === 'settings') renderSettings();
     else if (view.name === 'favorites') renderFavorites();
+    else if (view.name === 'politico' && window.Politicos) window.Politicos.renderPerfil($app, topbar('Info Políticos', true), view.pid);
     else if (view.name === 'lei' && window.Leis) window.Leis.renderChange($app, topbar('Mudança na lei', true), view.ev);
     else if (view.name === 'leiresumo' && window.Leis) window.Leis.renderSummary($app, topbar('Interpretação', true), view.id);
   }
@@ -337,7 +340,7 @@
       ${n ? `<span class="badge small">${n}</span>` : ''}
       <strong>${esc(s.title)}</strong>
       <small>${esc(s.subtitle)}</small>
-      ${s.monitors.length ? `<span class="card-status ${st && st.err ? 'err' : ''}">${st ? (st.err ? 'falha: ' + esc(String(st.err).slice(0, 38)) : 'atualizado ' + ago(st.at)) : 'monitorando'}</span>` : (s.special === 'favorites' ? `<span class="card-status">${favs().length} página(s) salva(s)</span>` : s.special ? '<span class="card-status live">● ao vivo · TSE</span>' : '<span class="card-status">acesso direto</span>')}
+      ${s.monitors.length ? `<span class="card-status ${st && st.err ? 'err' : ''}">${st ? (st.err ? 'falha: ' + esc(String(st.err).slice(0, 38)) : 'atualizado ' + ago(st.at)) : 'monitorando'}</span>` : (s.special === 'favorites' ? `<span class="card-status">${favs().length} página(s) salva(s)</span>` : s.special === 'politicos' ? '<span class="card-status live">● TSE · Câmara · Senado</span>' : s.special ? '<span class="card-status live">● ao vivo · TSE</span>' : '<span class="card-status">acesso direto</span>')}
     </button>`;
   }
 
@@ -471,11 +474,12 @@
     if (!el) return;
     const act = el.dataset.act;
     if (act.startsWith('lei-') && window.Leis && window.Leis.onAct(act, el)) return;
+    if (act.startsWith('ip-') && window.Politicos && window.Politicos.onAct(act, el)) return;
     if (act === 'refresh') { e.stopPropagation(); checkAll(true); return; }
     if (act === 'back') return back();
     if (act === 'settings') return go({ name: 'settings' });
     if (act === 'feed') return go({ name: 'feed', filter: 'all' });
-    if (act === 'source') { const s = byId(el.dataset.id); if (s && s.special === 'election') return go({ name: 'election' }); if (s && s.special === 'favorites') return go({ name: 'favorites' }); return go({ name: 'source', id: el.dataset.id }); }
+    if (act === 'source') { const s = byId(el.dataset.id); if (s && s.special === 'election') return go({ name: 'election' }); if (s && s.special === 'favorites') return go({ name: 'favorites' }); if (s && s.special === 'politicos') return go({ name: 'infopoliticos' }); return go({ name: 'source', id: el.dataset.id }); }
     if (act === 'open') return openUrl(el.dataset.url, el.dataset.title);
     if (act === 'fav') { toggleFav(el.dataset.url, el.dataset.title); render(); return; }
     if (act === 'fav-remove') { removeFav(el.dataset.url); render(); toast('Removido dos Favoritos'); return; }

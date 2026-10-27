@@ -15,6 +15,11 @@ const SOURCES = [
     desc: '', links: [], monitors: [],
   },
   {
+    id: 'infopoliticos', group: 'Políticos', icon: '🗺️', color: '#002776', special: 'politicos',
+    title: 'Info Políticos', subtitle: 'Mapa do Brasil por estado, cidade e bairro: quem atua em cada lugar e o que já fez',
+    desc: '', links: [], monitors: [],
+  },
+  {
     id: 'favoritos', group: 'Favoritos', icon: '⭐', color: '#ffdf00', special: 'favorites',
     title: 'Favoritos', subtitle: 'Páginas que você salvou para acessar direto',
     desc: '', links: [], monitors: [],
@@ -194,4 +199,4 @@ const SOURCES = [
   },
 ];
 
-const GROUP_ORDER = ['Eleições', 'Favoritos', 'Para sua candidatura', 'Leis e Câmara', 'Dinheiro público e transparência', 'Partidos', 'Meus sites'];
+const GROUP_ORDER = ['Eleições', 'Políticos', 'Favoritos', 'Para sua candidatura', 'Leis e Câmara', 'Dinheiro público e transparência', 'Partidos', 'Meus sites'];
