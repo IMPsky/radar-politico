@@ -113,7 +113,7 @@ const SOURCES = [
   {
     id: 'planalto', group: 'Leis e Câmara', icon: '📜', color: '#2c8f6f',
     title: 'Planalto – Legislação', subtitle: 'Constituição e leis eleitorais',
-    desc: 'Textos oficiais e atualizados. Se o texto de alguma dessas leis for alterado, aparece em Nova Notícia.',
+    desc: 'Textos oficiais e atualizados. As leis são conferidas artigo por artigo a cada 6 horas: se algo mudar, aparece em Nova notícia com o antes × depois e o botão Interpretação.',
     links: [
       { label: 'Constituição Federal', url: 'https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm' },
       { label: 'Lei das Eleições (9.504/97)', url: 'https://www.planalto.gov.br/ccivil_03/leis/l9504.htm' },
@@ -123,12 +123,9 @@ const SOURCES = [
       { label: 'Código Eleitoral (4.737/65)', url: 'https://www.planalto.gov.br/ccivil_03/leis/l4737compilado.htm' },
       { label: 'Portal da Legislação', url: 'https://www.planalto.gov.br/ccivil_03/' },
     ],
+    // as leis são conferidas artigo por artigo a cada 6 horas (monitor no GitHub: scripts/leis.py)
     monitors: [
-      { url: 'https://www.planalto.gov.br/ccivil_03/leis/l9504.htm', type: 'hash', label: 'Lei das Eleições (9.504/97)' },
-      { url: 'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp135.htm', type: 'hash', label: 'Lei da Ficha Limpa (LC 135/2010)' },
-      { url: 'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp64.htm', type: 'hash', label: 'Lei de Inelegibilidade (LC 64/90)' },
-      { url: 'https://www.planalto.gov.br/ccivil_03/leis/l9096.htm', type: 'hash', label: 'Lei dos Partidos (9.096/95)' },
-      { url: 'https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm', type: 'hash', label: 'Constituição Federal' },
+      { url: 'https://raw.githubusercontent.com/IMPsky/radar-politico/main/data/leis/mudancas.json', type: 'leis' },
     ],
   },
 

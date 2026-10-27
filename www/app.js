@@ -165,6 +165,7 @@
     const now = Date.now();
     const news = [];
     let items = [];
+    if (mon.type === 'leis' && window.Leis) return window.Leis.runMonitor(mon, key, prev, store, getText);
 
     if (mon.type === 'camara-api') {
       const json = JSON.parse(await getText(mon.url));
@@ -279,6 +280,8 @@
     else if (view.name === 'feed') renderFeed();
     else if (view.name === 'settings') renderSettings();
     else if (view.name === 'favorites') renderFavorites();
+    else if (view.name === 'lei' && window.Leis) window.Leis.renderChange($app, topbar('Mudança na lei', true), view.ev);
+    else if (view.name === 'leiresumo' && window.Leis) window.Leis.renderSummary($app, topbar('Interpretação', true), view.id);
   }
 
   function topbar(title, withBack, right) {
@@ -365,6 +368,8 @@
           ${s.links.map(l => `<button class="link-row" data-act="open" data-url="${esc(l.url)}" data-title="${esc(l.label)}"><span>${esc(l.label)}</span><small>${esc(hostOf(l.url))}</small>${favStar(l.url, l.label)}<b>↗</b></button>`).join('')}
         </div>
 
+        ${s.id === 'planalto' && window.Leis ? window.Leis.lawsSection() : ''}
+
         ${s.monitors.length ? `
           <h3>Conteúdo mais recente <small class="h-meta">${st ? 'verificado ' + ago(st.at) : ''}</small></h3>
           ${st && st.err && !latest.length ? `<div class="warn">Não foi possível ler o site agora (${esc(st.err)}). Use os botões acima para abrir o site oficial.</div>` : ''}
@@ -431,6 +436,7 @@
         <input id="c-url" class="input" placeholder="Endereço (ex.: https://www.cabo.pe.gov.br)" inputmode="url">
         <button class="btn" data-act="add-custom">+ Adicionar card</button>
         ${custom.length ? `<h3>Meus sites</h3><div class="links">${custom.map(c => `<div class="link-row"><span>${esc(c.title)}</span><small>${esc(hostOf(c.url))}</small><b class="x" data-act="remove-custom" data-id="${esc(c.id)}">✕</b></div>`).join('')}</div>` : ''}
+        ${window.Leis ? window.Leis.settingsHtml() : ''}
         <h3>Dados do app</h3>
         <p class="desc">O app verifica os sites ao abrir, ao voltar para ele e a cada 30 minutos enquanto estiver aberto.</p>
         <button class="btn ghost" data-act="reset">Zerar histórico de novidades</button>
@@ -464,6 +470,7 @@
     const el = e.target.closest('[data-act]');
     if (!el) return;
     const act = el.dataset.act;
+    if (act.startsWith('lei-') && window.Leis && window.Leis.onAct(act, el)) return;
     if (act === 'refresh') { e.stopPropagation(); checkAll(true); return; }
     if (act === 'back') return back();
     if (act === 'settings') return go({ name: 'settings' });
@@ -476,7 +483,7 @@
     if (act === 'feed-open') {
       const feed = store.get('feed', []);
       const f = feed[+el.dataset.i];
-      if (f) { f.read = true; store.set('feed', feed); render(); openUrl(f.url); }
+      if (f) { f.read = true; store.set('feed', feed); if (f.kind === 'lei' && f.ev && window.Leis) return go({ name: 'lei', ev: f.ev }); render(); openUrl(f.url, f.title); }
       return;
     }
     if (act === 'mark-all') {
@@ -526,6 +533,8 @@
   if (isNative && Plugins.LocalNotifications) {
     Plugins.LocalNotifications.addListener('localNotificationActionPerformed', () => { stack.length = 0; view = { name: 'home' }; go({ name: 'feed', filter: 'unread' }); });
   }
+
+  window.App = { go, back, toast, openUrl, store, render, topbar };
 
   // ---------- início ----------
   render();
