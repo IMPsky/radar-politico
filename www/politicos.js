@@ -330,8 +330,10 @@
     if (!st.mun) {
       if (!st.geo) return '<div class="ip-msg">Não foi possível carregar o mapa do estado (IBGE). Verifique a internet e toque em ↻.</div>';
       const fs = st.geo.features;
-      const pj = projector(geoBBox(fs));
-      map = { project: pj.f, base: { x: -20, y: -20, w: pj.w + 40, h: pj.h + 40 }, anchors: {}, names: {} };
+      // Fernando de Noronha fica longe do continente: não entra no enquadramento do mapa de PE
+      const pj = projector(geoBBox(fs.filter(f => f.properties.codarea !== '2605459') .length ? fs.filter(f => f.properties.codarea !== '2605459') : fs));
+      const hMin = Math.max(pj.h + 40, (pj.w + 40) * 0.7);
+      map = { project: pj.f, base: { x: -20, y: -20 - (hMin - pj.h - 40) / 2, w: pj.w + 40, h: hMin }, anchors: {}, names: {} };
       const paths = fs.map(ft => {
         const id = ft.properties.codarea;
         map.anchors[id] = centroid(ft.geometry, pj.f);
@@ -446,7 +448,8 @@
     }
     // fotos agrupadas por lugar (em anel quando há várias no mesmo ponto)
     const grupos = {};
-    lista.forEach(x => { if (map.anchors[x.at]) (grupos[x.at] = grupos[x.at] || []).push(x); });
+    const noMapa = (svg.dataset.kind === 'uf' && st.cargo === 'todos') ? lista.filter(x => !/^dep[ed]$/.test(x.p.cargo)) : lista;
+    noMapa.forEach(x => { if (map.anchors[x.at]) (grupos[x.at] = grupos[x.at] || []).push(x); });
     Object.entries(grupos).forEach(([at, xs]) => {
       const [ax, ay] = map.anchors[at];
       xs.forEach((x, i) => {
@@ -603,7 +606,7 @@
       <div class="ip-mapbox">${st.loading ? `<div class="ip-msg"><span class="spin"></span> ${esc(st.loading)}</div>` : mapHtml()}
         ${st.loading ? '' : `<div class="ip-zoom"><button data-act="ip-zoom" data-z="in">+</button><button data-act="ip-zoom" data-z="out">−</button><button data-act="ip-zoom" data-z="reset">⤢</button></div>`}
       </div>
-      <p class="ip-hint">${!st.uf ? 'Toque em um estado para ver os políticos de lá. Toque numa foto para ver a carreira.' : !st.mun ? 'Toque em uma cidade para ver prefeito e vereadores. Os deputados aparecem na cidade onde tiveram mais votos. Use dois dedos para dar zoom.' : st.bairros && st.bairros.length ? 'Os pontos são os bairros (pelos locais de votação). Cada vereador aparece no bairro onde teve mais votos. Toque num bairro para filtrar.' : 'Toque numa foto para ver a carreira.'}</p>
+      <p class="ip-hint">${!st.uf ? 'Toque em um estado para ver os políticos de lá. Toque numa foto para ver a carreira.' : !st.mun ? 'Toque em uma cidade para ver prefeito e vereadores. Os deputados aparecem na cidade onde tiveram mais votos' + (st.cargo === 'todos' ? ' (para ver os deputados estaduais no mapa, toque em “Dep. estaduais”)' : '') + '. Use dois dedos ou os botões para dar zoom — os nomes aparecem ao aproximar.' : st.bairros && st.bairros.length ? 'Os pontos são os bairros (pelos locais de votação). Cada vereador aparece no bairro onde teve mais votos. Toque num bairro para filtrar.' : 'Toque numa foto para ver a carreira.'}</p>
       <h3 class="ip-h">${esc(titulo())} <small>${lista.length} político(s)</small></h3>
       ${ORD.filter(([k]) => grupos[k]).map(([k, nm]) => `<h4 class="ip-g">${esc(nm)}</h4><div class="ip-list">${grupos[k].map(cardPessoa).join('')}</div>`).join('') || (st.loading ? '' : `<div class="ip-msg">${st.est || !st.uf ? 'Nenhum político encontrado com esse filtro.' : 'Os dados deste estado ainda estão sendo preparados no servidor. Tente de novo em alguns minutos.'}</div>`)}
       <p class="ip-src">Fontes oficiais: TSE (candidatos eleitos, votos e locais de votação), Câmara dos Deputados, Senado Federal, IBGE (mapas).</p>`;
@@ -756,7 +759,11 @@
         lista = (m.dados || []).map(x => ({ ano: x.anoInicio, cargo: x.cargo, local: x.municipio || x.siglaUf, partido: x.siglaPartidoEleicao, sit: `mandato ${x.anoInicio}–${x.anoFim}` }));
       } catch (e) { /* nada */ }
     }
-    if (!lista.length) { setSec('pf-car', '<p class="muted">O TSE não respondeu agora. Toque em “Ficha completa no TSE” abaixo.</p>'); return; }
+    if (!lista.length) {
+      setSec('pf-car', p.tse ? '<p class="muted">O TSE não respondeu agora. Toque em “Ficha completa no TSE” abaixo ou tente de novo mais tarde.</p>'
+        : p.senadoCod ? '<p class="muted">Não há candidatura recente deste(a) senador(a) no TSE para listar aqui (por exemplo, quando assumiu como suplente). Os mandatos estão em “Atuação no Senado”.</p>' : null);
+      return;
+    }
     lista.sort((a, b) => b.ano - a.ano);
     const vit = lista.filter(e => SIT_OK.test(e.sit)).length;
     setSec('pf-car', `<p class="pf-sum">Disputou <b>${lista.length}</b> eleição(ões) e foi eleito(a) <b>${vit}</b> vez(es).</p>
@@ -787,7 +794,7 @@
       <div class="pf-nums">
         ${total != null ? `<div><b>${intl(total)}</b><small>proposições apresentadas (autor ou coautor)</small></div>` : ''}
         ${tipos.map(([t, nm], i) => porTipo[i] ? `<div><b>${intl(porTipo[i])}</b><small>${nm}</small></div>` : '').join('')}
-        <div><b>${intl(frentes.length)}</b><small>frentes parlamentares</small></div>
+        ${frentes.length ? `<div><b>${intl(frentes.length)}</b><small>frentes parlamentares</small></div>` : ''}
         <div><b>${intl(atuais.length)}</b><small>comissões e órgãos atuais</small></div>
       </div>
       ${cargosImp.length ? `<h5>Cargos de destaque</h5><ul class="pf-ul">${cargosImp.slice(0, 8).map(o => `<li><b>${esc(o.titulo)}</b> — ${esc(o.nomeOrgao || o.siglaOrgao)}</li>`).join('')}</ul>` : ''}
