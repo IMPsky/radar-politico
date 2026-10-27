@@ -1,0 +1,46 @@
+name: Atualizar Info Politicos
+
+on:
+  workflow_dispatch:
+    inputs:
+      bairros:
+        description: 'Estados com mapa de bairros (siglas separadas por espaço)'
+        required: false
+        default: 'PE'
+  schedule:
+    - cron: '41 7 * * 1'
+  push:
+    branches: [ main ]
+    paths: [ 'scripts/politicos.py' ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: info-politicos
+  cancel-in-progress: false
+
+jobs:
+  dados:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Processar dados do TSE
+        env:
+          BAIRRO_UFS: ${{ github.event.inputs.bairros || 'PE' }}
+        run: python3 scripts/politicos.py
+
+      - name: Salvar no repositorio
+        run: |
+          git config user.name "radar-politico-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/politicos
+          git commit -m "Info Politicos atualizado" || echo "sem mudancas"
+          git pull --rebase
+          git push
