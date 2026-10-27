@@ -319,12 +319,34 @@
     return best || [0, 0];
   }
 
+  // ---------- cores do mapa (pelo partido de quem governa cada lugar) ----------
+  function corArea(partido, op) { return partido ? `fill:${partyColor(partido)};fill-opacity:${op || 0.78}` : ''; }
+  function partidoGov(uf) { const g = st.govs && st.govs[uf]; const x = g && (st.mand === 'e26' ? g.e26 : g.m22); return x ? x.p : ''; }
+  function partidoPref(tse) { const m = tse && st.munData && st.munData.mun[tse]; return m && m['11'] && m['11'][0] ? m['11'][0].p : ''; }
+  function partidoBairro(b) {
+    // partido do vereador eleito mais votado no bairro
+    const md = st.munData && st.munData.mun[(cityInfo() || {}).tse];
+    const t = (b.v13 || []).find(x => x[3]);
+    const v = t && md && (md['13'] || []).find(y => y.sq === t[3]);
+    return v ? v.p : '';
+  }
+  function legenda() {
+    const cont = {};
+    let titulo_ = '';
+    if (!st.uf) { titulo_ = 'Cor do estado = partido do governador' + (st.mand === 'e26' ? ' eleito em 2026' : ''); Object.keys(UFS).forEach(uf => { const p = partidoGov(uf); if (p) cont[p] = (cont[p] || 0) + 1; }); }
+    else if (!st.mun) { titulo_ = 'Cor da cidade = partido do prefeito (eleição 2024)'; Object.keys((st.munData && st.munData.mun) || {}).forEach(c => { const p = partidoPref(c); if (p) cont[p] = (cont[p] || 0) + 1; }); }
+    else if (st.bairros && st.bairros.length) { titulo_ = 'Cor do bairro = partido do vereador eleito mais votado ali'; st.bairros.forEach(b => { const p = partidoBairro(b); if (p) cont[p] = (cont[p] || 0) + 1; }); }
+    const lst = Object.entries(cont).sort((a, b) => b[1] - a[1]);
+    if (!lst.length) return '';
+    return `<div class="ip-leg"><small>${esc(titulo_)}</small><div>${lst.map(([p, n]) => `<span><i style="background:${partyColor(p)}"></i>${esc(p)} <b>${n}</b></span>`).join('')}</div></div>`;
+  }
+
   function mapHtml() {
     if (!st.uf) {
       const M = window.BR_MAP;
       if (!M) return '<div class="ip-msg">Mapa indisponível.</div>';
       return `<svg class="ip-svg" viewBox="${M.viewBox}" data-kind="br">
-        <g class="ip-areas">${M.locations.map(l => `<path d="${l.path}" data-uf="${l.id.toUpperCase()}"></path>`).join('')}</g>
+        <g class="ip-areas">${M.locations.map(l => `<path d="${l.path}" data-uf="${l.id.toUpperCase()}" style="${corArea(partidoGov(l.id.toUpperCase()))}"></path>`).join('')}</g>
         <g class="ip-labels"></g><g class="ip-marks"></g></svg>`;
     }
     if (!st.mun) {
@@ -337,7 +359,7 @@
       const paths = fs.map(ft => {
         const id = ft.properties.codarea;
         map.anchors[id] = centroid(ft.geometry, pj.f);
-        return `<path d="${pathD(ft.geometry, pj.f)}" data-mun="${id}"></path>`;
+        return `<path d="${pathD(ft.geometry, pj.f)}" data-mun="${id}" style="${corArea(partidoPref(ibge2tse[id]))}"></path>`;
       }).join('');
       return `<svg class="ip-svg" viewBox="${map.base.x} ${map.base.y} ${map.base.w} ${map.base.h}" data-kind="uf"><g class="ip-areas">${paths}</g><g class="ip-labels"></g><g class="ip-marks"></g></svg>`;
     }
@@ -354,12 +376,12 @@
     map = { project: pj.f, base: { x: -30, y: -30, w: pj.w + 60, h: pj.h + 60 }, anchors: {}, names: {} };
     const ci = cityInfo();
     map.anchors[ci.ibge] = feats.length ? centroid(feats[0].geometry, pj.f) : [pj.w / 2, pj.h / 2];
-    const shape = feats.map(ft => `<path d="${pathD(ft.geometry, pj.f)}" class="city"></path>`).join('');
+    const shape = feats.map(ft => `<path d="${pathD(ft.geometry, pj.f)}" class="city" style="${corArea(partidoPref(ci.tse), 0.3)}"></path>`).join('');
     const dots = (st.bairros || []).map((b, i) => {
       if (!b.lat) return '';
       const [x, y] = pj.f(b.lon, b.lat);
       map.anchors['bairro:' + i] = [x, y];
-      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" data-bairro="${i}" class="${String(i) === st.bairro ? 'sel' : ''}"></circle>`;
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" data-bairro="${i}" class="${String(i) === st.bairro ? 'sel' : ''}" style="fill:${partidoBairro(b) ? partyColor(partidoBairro(b)) : '#ffdf00'}"></circle>`;
     }).join('');
     return `<svg class="ip-svg" viewBox="${map.base.x} ${map.base.y} ${map.base.w} ${map.base.h}" data-kind="city"><g class="ip-areas">${shape}</g><g class="ip-dots">${dots}</g><g class="ip-labels"></g><g class="ip-marks"></g></svg>`;
   }
@@ -406,7 +428,7 @@
       const show = t.dataset.always === '1' || zoom >= (+t.dataset.minz || 0);
       t.style.display = show ? '' : 'none';
     });
-    map.svg.querySelectorAll('.ip-dots circle').forEach(c => c.setAttribute('r', (c.classList.contains('sel') ? 9 : 5) * u));
+    map.svg.querySelectorAll('.ip-dots circle').forEach(c => { const sel = c.classList.contains('sel'); c.setAttribute('r', (sel ? 9 : 5.5) * u); c.style.strokeWidth = (sel ? 3 : 1.2) * u; });
     map.svg.querySelectorAll('.ip-areas path').forEach(p => p.setAttribute('stroke-width', (p.classList.contains('city') ? 2 : 0.8) * u));
   }
 
@@ -606,6 +628,7 @@
       <div class="ip-mapbox">${st.loading ? `<div class="ip-msg"><span class="spin"></span> ${esc(st.loading)}</div>` : mapHtml()}
         ${st.loading ? '' : `<div class="ip-zoom"><button data-act="ip-zoom" data-z="in">+</button><button data-act="ip-zoom" data-z="out">−</button><button data-act="ip-zoom" data-z="reset">⤢</button></div>`}
       </div>
+      ${st.loading ? '' : legenda()}
       <p class="ip-hint">${!st.uf ? 'Toque em um estado para ver os políticos de lá. Toque numa foto para ver a carreira.' : !st.mun ? 'Toque em uma cidade para ver prefeito e vereadores. Os deputados aparecem na cidade onde tiveram mais votos' + (st.cargo === 'todos' ? ' (para ver os deputados estaduais no mapa, toque em “Dep. estaduais”)' : '') + '. Use dois dedos ou os botões para dar zoom — os nomes aparecem ao aproximar.' : st.bairros && st.bairros.length ? 'Os pontos são os bairros (pelos locais de votação). Cada vereador aparece no bairro onde teve mais votos. Toque num bairro para filtrar.' : 'Toque numa foto para ver a carreira.'}</p>
       <h3 class="ip-h">${esc(titulo())} <small>${lista.length} político(s)</small></h3>
       ${ORD.filter(([k]) => grupos[k]).map(([k, nm]) => `<h4 class="ip-g">${esc(nm)}</h4><div class="ip-list">${grupos[k].map(cardPessoa).join('')}</div>`).join('') || (st.loading ? '' : `<div class="ip-msg">${st.est || !st.uf ? 'Nenhum político encontrado com esse filtro.' : 'Os dados deste estado ainda estão sendo preparados no servidor. Tente de novo em alguns minutos.'}</div>`)}

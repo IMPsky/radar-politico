@@ -19,8 +19,8 @@
 .ip-areas path:hover, .ip-areas path:active { fill: #1b5c3b; }
 .ip-svg[data-kind="br"] .ip-areas path { fill: #145233; stroke-width: 1.2; }
 .ip-areas path.city { fill: #12402a; stroke: var(--gold); cursor: default; }
-.ip-dots circle { fill: #ffdf00; fill-opacity: .55; stroke: #05170f; cursor: pointer; }
-.ip-dots circle.sel { fill: #ffdf00; fill-opacity: 1; stroke: #fff; }
+.ip-dots circle { fill: #ffdf00; fill-opacity: .9; stroke: #fff; stroke-opacity: .7; cursor: pointer; }
+.ip-dots circle.sel { fill-opacity: 1; stroke: #ffdf00; }
 .ip-lbl { fill: #e8f0eb; font-family: system-ui, sans-serif; font-weight: 600; text-anchor: middle; dominant-baseline: middle; pointer-events: none; paint-order: stroke; stroke: rgba(5, 23, 15, .85); }
 .ip-lbl.uf { font-weight: 800; fill: #fff; }
 .ip-lbl.cap { fill: var(--gold); font-weight: 800; }
@@ -87,3 +87,11 @@
 .pf-ok, .pf-st { display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; background: #0d4a2a; color: #3ddc84; }
 .pf-st { background: #1b2a22; color: #9bb8a6; font-weight: 700; }
 .pf-bio { font-size: 14.5px; line-height: 1.6; color: #e8f0eb; margin: 0 0 6px; white-space: pre-line; }
+
+.ip-leg { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+.ip-leg small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.ip-leg div { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.ip-leg span { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; }
+.ip-leg i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.ip-leg b { color: var(--muted); font-weight: 600; }
+.ip-areas path[style*="fill:"]:hover, .ip-areas path[style*="fill:"]:active { filter: brightness(1.2); }
