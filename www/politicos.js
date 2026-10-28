@@ -623,7 +623,8 @@
       ${selects()}
       <div class="ip-chips">${chips.map(k => `<button class="chip ${st.cargo === k ? 'on' : ''}" data-act="ip-cargo" data-k="${k}">${esc(CHIPS.find(c => c[0] === k)[1])}</button>`).join('')}</div>
       ${showMand ? `<div class="ip-chips mand"><button class="chip ${st.mand === 'atual' ? 'on' : ''}" data-act="ip-mand" data-k="atual">Mandato atual</button><button class="chip ${st.mand === 'e26' ? 'on' : ''}" data-act="ip-mand" data-k="e26">Eleitos em 2026 (posse 2027)</button></div>` : ''}
-      <input class="input ip-q" type="search" placeholder="Buscar político ou partido…" value="${esc(st.q)}" data-ip="q">
+      <input class="input ip-q" type="search" placeholder="Buscar qualquer político do Brasil pelo nome…" value="${esc(st.q)}" data-ip="q">
+      ${nacionalHtml()}
       <nav class="ip-crumbs">${crumbs.join('<i>›</i>')}</nav>
       <div class="ip-mapbox">${st.loading ? `<div class="ip-msg"><span class="spin"></span> ${esc(st.loading)}</div>` : mapHtml()}
         ${st.loading ? '' : `<div class="ip-zoom"><button data-act="ip-zoom" data-z="in">+</button><button data-act="ip-zoom" data-z="out">−</button><button data-act="ip-zoom" data-z="reset">⤢</button></div>`}
@@ -631,7 +632,7 @@
       ${st.loading ? '' : legenda()}
       <p class="ip-hint">${!st.uf ? 'Toque em um estado para ver os políticos de lá. Toque numa foto para ver a carreira.' : !st.mun ? 'Toque em uma cidade para ver prefeito e vereadores. Os deputados aparecem na cidade onde tiveram mais votos' + (st.cargo === 'todos' ? ' (para ver os deputados estaduais no mapa, toque em “Dep. estaduais”)' : '') + '. Use dois dedos ou os botões para dar zoom — os nomes aparecem ao aproximar.' : st.bairros && st.bairros.length ? 'Os pontos são os bairros (pelos locais de votação). Cada vereador aparece no bairro onde teve mais votos. Toque num bairro para filtrar.' : 'Toque numa foto para ver a carreira.'}</p>
       <h3 class="ip-h">${esc(titulo())} <small>${lista.length} político(s)</small></h3>
-      ${ORD.filter(([k]) => grupos[k]).map(([k, nm]) => `<h4 class="ip-g">${esc(nm)}</h4><div class="ip-list">${grupos[k].map(cardPessoa).join('')}</div>`).join('') || (st.loading ? '' : `<div class="ip-msg">${st.est || !st.uf ? 'Nenhum político encontrado com esse filtro.' : 'Os dados deste estado ainda estão sendo preparados no servidor. Tente de novo em alguns minutos.'}</div>`)}
+      ${ORD.filter(([k]) => grupos[k]).map(([k, nm]) => `<h4 class="ip-g">${esc(nm)}</h4><div class="ip-list">${grupos[k].map(cardPessoa).join('')}</div>`).join('') || (st.loading ? '' : `<div class="ip-msg">${st.q.trim().length >= 3 ? 'Ninguém com esse nome neste lugar — veja a busca em todo o Brasil acima.' : st.est || !st.uf ? 'Nenhum político encontrado com esse filtro.' : 'Os dados deste estado ainda estão sendo preparados no servidor. Tente de novo em alguns minutos.'}</div>`)}
       <p class="ip-src">Fontes oficiais: TSE (candidatos eleitos, votos e locais de votação), Câmara dos Deputados, Senado Federal, IBGE (mapas).</p>`;
     if (!st.loading) mountMap();
   }
@@ -709,6 +710,82 @@
   }
   function abrir(pid) { if (people[pid]) A().go({ name: 'politico', pid }); }
 
+  // ---------- busca por nome em todo o Brasil ----------
+  const COD_CARGO = { 3: 'gov', 5: 'sen', 6: 'depf', 7: 'depe', 8: 'depd', 11: 'pref' };
+  let nac = null, nacCarregando = false;
+  async function carregarNacional() {
+    if (nac || nacCarregando) return;
+    nacCarregando = true;
+    try {
+      const [idx, cam] = await Promise.all([
+        getJSON(dataUrl('busca.json')).catch(() => ({ cols: [], rows: [] })),
+        (async () => {
+          let todos = [];
+          for (let pg = 1; pg <= 7; pg++) {
+            const j = await getJSON(`${CAMARA}/deputados?itens=100&pagina=${pg}&ordem=ASC&ordenarPor=nome`, { cache: 12 * 3600e3 }).catch(() => null);
+            if (!j || !(j.dados || []).length) break;
+            todos = todos.concat(j.dados);
+            if (j.dados.length < 100) break;
+          }
+          return todos;
+        })(),
+        st.senado ? null : ensureIndex(),
+      ]);
+      const c = idx.cols || [];
+      nac = {
+        tse: (idx.rows || []).map(r => { const o = {}; c.forEach((k, i) => { o[k] = r[i]; }); o.f = fold(o.n) + ' ' + fold(o.nc) + ' ' + fold(o.p); return o; }),
+        cam: cam.map(d => Object.assign(d, { f: fold(d.nome) + ' ' + fold(d.siglaPartido) })),
+      };
+    } catch (e) { nac = { tse: [], cam: [] }; }
+    nacCarregando = false;
+    if (root) paint();
+  }
+  function buscaNacional(q) {
+    const ws = fold(q).split(' ').filter(w => w.length >= 2);
+    if (!ws.length || !nac) return [];
+    const ok = f => ws.every(w => f.includes(w));
+    const out = [], vistos = new Set();
+    const camPor = {};
+    nac.cam.forEach(d => { camPor[fold(d.nome) + '|' + d.siglaUf] = d; });
+    nac.tse.filter(o => ok(o.f)).sort((a, b) => (a.a === 2026) - (b.a === 2026) || (b.v || 0) - (a.v || 0)).slice(0, 60).forEach(o => {
+      const cargo = COD_CARGO[o.c]; if (!cargo) return;
+      const extra = { local: o.c === '11' ? o.mn : UFS[o.uf] ? UFS[o.uf][0] : o.uf, posse2027: o.a === 2026 };
+      const d = cargo === 'depf' && o.a === 2022 && camPor[fold(o.n) + '|' + o.uf];
+      if (d) Object.assign(extra, { camaraId: d.id, fotos: [https(d.urlFoto)] });
+      const s = cargo === 'sen' && o.a === 2022 && (st.senado || []).find(x => x.UfParlamentar === o.uf && fold(x.NomeParlamentar) === fold(o.n));
+      if (s) Object.assign(extra, { senadoCod: s.CodigoParlamentar, fotos: [https(s.UrlFotoParlamentar)] });
+      const p = fromTSE(o, cargo, o.uf, extra);
+      if (d) vistos.add('cam' + d.id);
+      if (s) vistos.add('sen' + s.CodigoParlamentar);
+      out.push({ p, info: `${extra.local}${o.c === '11' ? ' (' + o.uf + ')' : ''} · ${o.a === 2026 ? 'eleito(a) em 2026, posse em 2027' : 'eleito(a) em ' + o.a}` });
+    });
+    // deputados em exercício que não estão na lista de eleitos (suplentes que assumiram)
+    nac.cam.filter(d => ok(d.f) && !vistos.has('cam' + d.id)).slice(0, 20).forEach(d => {
+      const id = 'cam-' + d.id;
+      people[id] = Object.assign(people[id] || {}, { id, cargo: 'depf', uf: d.siglaUf, base: [], camaraId: d.id, fotos: [https(d.urlFoto)], partido: d.siglaPartido, nome: d.nome, local: (UFS[d.siglaUf] || [d.siglaUf])[0] });
+      out.push({ p: people[id], info: `${people[id].local} · em exercício na Câmara` });
+    });
+    (st.senado || []).filter(x => ok(fold(x.NomeParlamentar) + ' ' + fold(x.NomeCompletoParlamentar) + ' ' + fold(x.SiglaPartidoParlamentar)) && !vistos.has('sen' + x.CodigoParlamentar)).slice(0, 20).forEach(x => {
+      const p = senadoresAtuais(x.UfParlamentar).find(y => y.senadoCod === x.CodigoParlamentar);
+      if (p) { p.local = (UFS[x.UfParlamentar] || [x.UfParlamentar])[0]; out.push({ p, info: `${p.local} · em exercício no Senado` }); }
+    });
+    // vereadores do estado escolhido
+    if (st.uf && st.munData) {
+      Object.entries(st.munData.mun || {}).forEach(([c, m]) => (m['13'] || []).forEach(x => {
+        if (ok(fold(x.n) + ' ' + fold(x.nc) + ' ' + fold(x.p))) out.push({ p: fromTSE(x, 'ver', st.uf, { local: m.nm }), info: `${m.nm} (${st.uf}) · vereador(a) eleito(a) em 2024` });
+      }));
+    }
+    return out.slice(0, 80);
+  }
+  function nacionalHtml() {
+    const q = st.q.trim();
+    if (q.length < 3) return '';
+    if (!nac) { carregarNacional(); return `<div class="ip-msg"><span class="spin"></span> Procurando “${esc(q)}” em todo o Brasil…</div>`; }
+    const r = buscaNacional(q);
+    return `<h3 class="ip-h">Busca em todo o Brasil <small>${r.length} resultado(s)</small></h3>
+      ${r.length ? `<div class="ip-list">${r.map(cardPessoa).join('')}</div>` : `<div class="ip-msg">Ninguém com “${esc(q)}” entre governadores, senadores, deputados, prefeitos${st.uf ? ' e vereadores de ' + esc(UFS[st.uf][0]) : ''}. Para achar um vereador, escolha o estado primeiro.</div>`}`;
+  }
+
   // =====================================================================
   // ---------- card do político: carreira e o que fez ----------
   // =====================================================================
@@ -721,7 +798,7 @@
     const col = partyColor(p.partido);
     const fotos = p.fotos || [];
     const local = p.local || (p.uf ? UFS[p.uf][0] : '');
-    const baseTxt = (p.base || []).length && st.est ? p.base.map(b => `${esc((st.est.mun || {})[b[0]] || b[0])} (${pct(b[2])})`).join(', ') : '';
+    const baseTxt = (p.base || []).length && st.est && st.est.uf === p.uf ? p.base.map(b => `${esc((st.est.mun || {})[b[0]] || b[0])} (${pct(b[2])})`).join(', ') : '';
     container.innerHTML = header + `
       <main class="detail pf" style="--pc:${col}">
         <div class="pf-hero">

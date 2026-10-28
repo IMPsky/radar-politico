@@ -315,6 +315,18 @@ def main():
         print(f'{uf}: estado {tam // 1024} KB, cidades {tam2 // 1024} KB ({len(mun)}), bairros em {nb} cidades', flush=True)
         index.append({'uf': uf, 'cidades': len(mun), 'bairros': nb})
     dump(gov_path, govs)
+    # índice nacional para a busca por nome (governadores, senadores, deputados e prefeitos)
+    cols = ['sq', 'n', 'nc', 'p', 'c', 'uf', 'ue', 'mn', 'a', 'v']
+    linhas = []
+    for base, tot in ((el22, t22), (el26, t26), (el24, t24)):
+        for e in base.values():
+            if e['c'] == '13':
+                continue
+            v = tot.get(e['sq'] + '|2') or tot.get(e['sq']) or 0
+            linhas.append([e['sq'], e['n'], e['nc'] if e['nc'] != e['n'] else '', e['p'], e['c'], e['uf'], e['ue'],
+                           e['mn'] if e['c'] == '11' else '', e['a'], v])
+    if len(so) == len(UFS):
+        dump(os.path.join(OUT, 'busca.json'), {'cols': cols, 'rows': linhas})
     idx_path = os.path.join(OUT, 'index.json')
     antigo = {}
     try:
