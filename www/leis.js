@@ -288,10 +288,12 @@
     return mud;
   }
 
-  async function conferirNoCelular(store, force) {
+  async function conferirNoCelular(store, force, so, aviso) {
     const loc = store.get(LOCAL_KEY, { leis: {}, eventos: [] });
     const agora = new Date().toISOString();
     for (const [id, nome, url] of LEIS) {
+      if (so && !so.includes(id)) continue;
+      if (aviso) aviso(nome);
       const st = loc.leis[id];
       if (!force && st && st.status === 'ok' && Date.now() - Date.parse(st.verificado) < INTERVALO) continue;
       try {
@@ -625,5 +627,20 @@ ${corpo}`;
     return false;
   }
 
-  window.Leis = { LEIS_URL, runMonitor, renderChange, renderSummary, lawsSection, settingsHtml, onAct, diffWords, interpretarOffline };
+  // usado pela Pesquisa: garante que o texto das leis está guardado no celular
+  let garantindo = null;
+  async function garantirLeis(store, aviso) {
+    if (garantindo) return garantindo;
+    garantindo = (async () => {
+      const falta = [];
+      for (const [id] of LEIS) if (!(await snapGet(id))) falta.push(id);
+      if (falta.length) await conferirNoCelular(store, true, falta, aviso);
+      const out = [];
+      for (const [id, nome, url] of LEIS) { const sn = await snapGet(id); if (sn) out.push({ id, nome, url, artigos: sn.artigos, verificado: sn.verificado }); }
+      return out;
+    })();
+    try { return await garantindo; } finally { garantindo = null; }
+  }
+
+  window.Leis = { LEIS, garantirLeis, snapGet, glossarioDe, RESUMOS, events, aiCfg, chamarIA, md, LEIS_URL, runMonitor, renderChange, renderSummary, lawsSection, settingsHtml, onAct, diffWords, interpretarOffline };
 })();

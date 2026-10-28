@@ -268,6 +268,7 @@
   const stack = [];
 
   function go(v) { stack.push(view); view = v; render(); window.scrollTo(0, 0); }
+  function replace(v) { view = v; render(); window.scrollTo(0, 0); }
   function back() { if (stack.length) { view = stack.pop(); render(); return true; } return false; }
 
   function unreadCount() { return store.get('feed', []).filter(f => !f.read).length; }
@@ -275,6 +276,11 @@
   function render() {
     if (window.Eleicao && view.name !== 'election') Eleicao.unmount();
     if (window.Politicos && view.name !== 'infopoliticos') Politicos.unmount();
+    if (window.Busca && view.name !== 'busca') Busca.unmount();
+    if (view.name === 'busca' && window.Busca) return Busca.mount($app, topbar('Pesquisar', true), view.q);
+    if (view.name === 'busca-art' && window.Busca) return Busca.renderArtigo($app, topbar('Pesquisar', true), view);
+    if (view.name === 'busca-lei' && window.Busca) return Busca.renderLei($app, topbar('Pesquisar', true), view);
+    if (view.name === 'leitura' && window.Busca) return Busca.renderLeitura($app, topbar('Pesquisar', true), view);
     if (view.name === 'infopoliticos' && window.Politicos) return Politicos.mount($app, topbar('Info Políticos', true));
     if (view.name === 'election') return Eleicao.mount($app, topbar('Votação em tempo real', true));
     if (view.name === 'home') renderHome();
@@ -304,7 +310,7 @@
     const sources = allSources();
     const groups = GROUP_ORDER.filter(g => sources.some(s => s.group === g));
 
-    $app.innerHTML = topbar('Radar Político', false, '<button class="icon-btn" data-act="settings" aria-label="Ajustes">⚙</button>') + `
+    $app.innerHTML = topbar('Radar Político', false, '<button class="icon-btn" data-act="busca" aria-label="Pesquisar">🔍</button><button class="icon-btn" data-act="settings" aria-label="Ajustes">⚙</button>') + `
       <main class="home">
         <button class="news-card" data-act="feed">
           <div class="news-head">
@@ -320,6 +326,7 @@
           </div>
           <div class="news-foot">Última verificação: ${ago(last)} <span class="refresh" data-act="refresh">↻ Atualizar</span></div>
         </button>
+        <button class="search-pill" data-act="busca"><span>🔍</span>Pesquisar nas notícias e leis…</button>
 
         ${groups.map(g => `
           <section class="group">
@@ -395,7 +402,7 @@
     const list = feed.filter(f => filter === 'all' || (filter === 'unread' && !f.read) || f.kind === filter);
     const last = store.get('lastCheck', 0);
 
-    $app.innerHTML = topbar('Nova notícia', true, feed.length ? '<button class="icon-btn" data-act="mark-all" aria-label="Marcar tudo como lido">✓</button>' : '') + `
+    $app.innerHTML = topbar('Nova notícia', true, '<button class="icon-btn" data-act="busca" aria-label="Pesquisar">🔍</button>' + (feed.length ? '<button class="icon-btn" data-act="mark-all" aria-label="Marcar tudo como lido">✓</button>' : '')) + `
       <main class="feed">
         <div class="chips">
           ${[['all', 'Tudo'], ['unread', 'Não lidas'], ['lei', 'Leis alteradas'], ['projeto', 'Projetos de lei'], ['noticia', 'Notícias']]
@@ -475,6 +482,8 @@
     const act = el.dataset.act;
     if (act.startsWith('lei-') && window.Leis && window.Leis.onAct(act, el)) return;
     if (act.startsWith('ip-') && window.Politicos && window.Politicos.onAct(act, el)) return;
+    if (act.startsWith('bx-') && window.Busca && window.Busca.onAct(act, el)) return;
+    if (act === 'busca') return go({ name: 'busca' });
     if (act === 'refresh') { e.stopPropagation(); checkAll(true); return; }
     if (act === 'back') return back();
     if (act === 'settings') return go({ name: 'settings' });
@@ -538,7 +547,7 @@
     Plugins.LocalNotifications.addListener('localNotificationActionPerformed', () => { stack.length = 0; view = { name: 'home' }; go({ name: 'feed', filter: 'unread' }); });
   }
 
-  window.App = { go, back, toast, openUrl, store, render, topbar };
+  window.App = { go, back, replace, toast, openUrl, store, render, topbar, getText, byId, allSources };
 
   // ---------- início ----------
   render();
