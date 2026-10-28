@@ -24,8 +24,16 @@
     pref: 'Prefeito(a)', ver: 'Vereador(a)',
   };
   const CHIPS = [
-    ['todos', 'Todos'], ['gov', 'Governador'], ['sen', 'Senadores'], ['depf', 'Dep. federais'], ['depe', 'Dep. estaduais'], ['pref', 'Prefeitos'], ['ver', 'Vereadores'],
+    ['todos', 'Todos'], ['gov', 'Governador'], ['sen', 'Senadores'], ['depf', 'Dep. federais'], ['depe', 'Dep. estaduais'], ['pref', 'Prefeitos'], ['ver', 'Vereadores'], ['nao', 'Não eleitos'],
   ];
+  const SIT = { n: 'não eleito(a)', s: 'suplente', '2': 'perdeu no 2º turno', x: 'candidatura sem votos válidos' };
+  const COD = { 3: 'gov', 5: 'sen', 6: 'depf', 7: 'depe', 8: 'depd', 11: 'pref', 13: 'ver' };
+  // linha compacta do arquivo de não eleitos: [sq, nome, nome completo, partido, número, votos, situação, unidade]
+  function fromCand(r, c, ano, uf, extra) {
+    const x = { sq: r[0], n: r[1], nc: r[2] || r[1], p: r[3], nr: r[4], v: r[5], ue: r[7], a: ano };
+    const p = fromTSE(x, COD[c], uf, Object.assign({ naoEleito: r[6] || 'n' }, extra || {}));
+    return p;
+  }
   const PARTY = {
     PT: '#e5383b', PCDOB: '#b71c1c', PSB: '#ff7a3d', PDT: '#d9480f', PSOL: '#c2185b', REDE: '#26a69a', PV: '#2e9e4f',
     PL: '#3d5afe', PP: '#1e88e5', REPUBLICANOS: '#00838f', UNIAO: '#1565c0', NOVO: '#fb8c00', PSDB: '#0277bd',
@@ -214,8 +222,59 @@
   }
   const tseGrupo = (g, c) => ((st.est && st.est[g] && st.est[g][c]) || []);
 
+  // ---------- candidatos que não se elegeram ----------
+  let naoCarregando = '';
+  async function carregarNao(tipo) {
+    if (naoCarregando === tipo) return;
+    naoCarregando = tipo;
+    if (tipo === 'uf') {
+      const uf = st.uf;
+      const d = await getJSON(dataUrl('cand/' + uf.toLowerCase() + '.json')).catch(() => ({}));
+      if (st.uf === uf) st.cand = { uf, d };
+    } else {
+      const ci = cityInfo();
+      const d = ci && ci.tse ? await getJSON(dataUrl(`cand/${st.uf.toLowerCase()}/${ci.tse}.json`)).catch(() => ({})) : {};
+      if (ci && cityInfo() && cityInfo().tse === ci.tse) st.candCid = { tse: ci.tse, d };
+    }
+    naoCarregando = '';
+    if (root) paint();
+  }
+  function naoEleitosDoNivel() {
+    const out = [];
+    if (!st.uf) return out;
+    if (!st.mun) {
+      if (!st.cand || st.cand.uf !== st.uf) { carregarNao('uf'); st.naoMsg = 'Carregando os candidatos não eleitos…'; return out; }
+      const ano = st.mand === 'e26' ? 2026 : 2022;
+      const d = (st.cand.d || {})[String(ano)] || {};
+      ['3', '5', '6', '7', '8'].forEach(c => (d[c] || []).forEach(r => {
+        const p = fromCand(r, c, ano, st.uf, { local: UFS[st.uf][0] });
+        out.push({ p, at: null, nao: true, info: `${SIT[r[6]] || 'não eleito(a)'} · ${intl(r[5])} votos em ${ano}` });
+      }));
+      st.naoMsg = out.length ? '' : `Sem dados de candidatos não eleitos de ${ano} para este estado ainda.`;
+      return out;
+    }
+    const ci = cityInfo();
+    if (!st.candCid || !ci || st.candCid.tse !== ci.tse) { carregarNao('mun'); st.naoMsg = 'Carregando os candidatos não eleitos…'; return out; }
+    const d = st.candCid.d || {};
+    if (st.bairro !== '' && st.bairros) {
+      const i = +st.bairro, b = st.bairros[i];
+      const porNr = {};
+      ['11', '13'].forEach(c => (d[c] || []).forEach(r => { porNr[c + '|' + r[4]] = r; }));
+      ['11', '13'].forEach(c => (b['v' + c] || []).filter(t => !t[3]).forEach(t => {
+        const r = porNr[c + '|' + t[0]];
+        if (r) out.push({ p: fromCand(r, c, 2024, st.uf, { local: ci.nome }), at: 'bairro:' + i, nao: true, info: `${intl(t[1])} votos aqui (${pct(t[2])} do bairro) · ${SIT[r[6]] || 'não eleito(a)'}` });
+      }));
+      st.naoMsg = out.length ? '' : 'Nenhum candidato não eleito entre os mais votados deste bairro.';
+      return out;
+    }
+    ['11', '13'].forEach(c => (d[c] || []).forEach(r => out.push({ p: fromCand(r, c, 2024, st.uf, { local: ci.nome }), at: null, nao: true, info: `${SIT[r[6]] || 'não eleito(a)'} · ${intl(r[5])} votos em 2024` })));
+    st.naoMsg = out.length ? '' : 'Sem dados de candidatos não eleitos para esta cidade ainda.';
+    return out;
+  }
+
   // lista de { p, at: código IBGE da cidade-âncora | 'uf:XX' | 'bairro:i', info }
   function pessoasDoNivel() {
+    if (st.cargo === 'nao') return naoEleitosDoNivel();
     const out = [];
     const want = k => st.cargo === 'todos' || st.cargo === k;
     if (!st.uf) {
@@ -574,9 +633,9 @@
   function matchQ(p) { if (!st.q) return true; const q = fold(st.q); return fold(p.nome).includes(q) || fold(p.nomeCompleto).includes(q) || fold(p.partido) === q; }
   function chipsDoNivel() {
     if (!st.uf) return ['todos', 'gov', 'sen'];
-    if (!st.mun) return ['todos', 'gov', 'sen', 'depf', 'depe', 'pref'];
-    if (st.bairro !== '') return ['todos', 'pref', 'ver'];
-    return ['todos', 'pref', 'ver', 'depf', 'depe'];
+    if (!st.mun) return ['todos', 'gov', 'sen', 'depf', 'depe', 'pref', 'nao'];
+    if (st.bairro !== '') return ['todos', 'pref', 'ver', 'nao'];
+    return ['todos', 'pref', 'ver', 'depf', 'depe', 'nao'];
   }
   function titulo() {
     if (!st.uf) return 'Brasil — governadores' + (st.cargo === 'sen' ? ' e senadores' : '');
@@ -591,7 +650,7 @@
     const fotos = p.fotos || [];
     return `<button class="ip-card" data-act="ip-pessoa" data-pid="${esc(p.id)}" style="--pc:${col}">
       <span class="ip-ph"><span>${esc(iniciais(p.nome))}</span>${fotos.length ? `<img src="${esc(fotos[0])}" data-alt="${esc(fotos.slice(1).join('|'))}" alt="" loading="lazy" onerror="window.ipImgErr(this)">` : ''}</span>
-      <span class="ip-ct"><b>${esc(p.nome)}</b><small>${esc(CARGOS[p.cargo] || '')} · ${esc(p.partido || '')}${p.posse2027 ? ' · posse em 2027' : ''}</small>
+      <span class="ip-ct"><b>${esc(p.nome)}</b><small>${p.naoEleito ? 'Candidato(a) a ' + esc((CARGOS[p.cargo] || '').toLowerCase()) : esc(CARGOS[p.cargo] || '')} · ${esc(p.partido || '')}${p.posse2027 ? ' · posse em 2027' : ''}</small>
       ${x.info ? `<em>${esc(x.info)}</em>` : (p.votos ? `<em>${intl(p.votos)} votos em ${p.ano}</em>` : '')}</span><b class="ip-go">›</b></button>`;
   }
   function selects() {
@@ -611,18 +670,19 @@
     const lista = st.loading ? [] : pessoasDoNivel().filter(x => matchQ(x.p));
     const chips = chipsDoNivel();
     if (!chips.includes(st.cargo)) st.cargo = 'todos';
-    const showMand = st.uf && !st.mun && ['todos', 'gov', 'sen', 'depf', 'depe'].includes(st.cargo) || (!st.uf);
+    const showMand = st.uf && !st.mun && ['todos', 'gov', 'sen', 'depf', 'depe', 'nao'].includes(st.cargo) || (!st.uf);
+    const mandNomes = st.cargo === 'nao' ? ['Eleição de 2022', 'Eleição de 2026'] : ['Mandato atual', 'Eleitos em 2026 (posse 2027)'];
     const crumbs = [`<button data-act="ip-nivel" data-n="br">Brasil</button>`];
     if (st.uf) crumbs.push(`<button data-act="ip-nivel" data-n="uf">${esc(st.uf)}</button>`);
     if (st.mun) crumbs.push(`<button data-act="ip-nivel" data-n="mun">${esc((cityInfo() || {}).nome || '')}</button>`);
     if (st.bairro !== '' && st.bairros) crumbs.push(`<span>${esc(st.bairros[+st.bairro].nm)}</span>`);
     const grupos = {};
-    lista.forEach(x => { const k = x.dep ? 'dep' : x.p.cargo; (grupos[k] = grupos[k] || []).push(x); });
-    const ORD = [['gov', 'Governador(a)'], ['sen', 'Senadores'], ['pref', 'Prefeito(a)'], ['ver', 'Vereadores'], ['depf', 'Deputados federais'], ['depe', 'Deputados estaduais'], ['depd', 'Deputados distritais'], ['dep', 'Deputados mais votados nesta cidade (2022)']];
+    lista.forEach(x => { const k = x.nao ? 'nao-' + x.p.cargo : x.dep ? 'dep' : x.p.cargo; (grupos[k] = grupos[k] || []).push(x); });
+    const ORD = [['nao-gov', 'Candidatos a governador não eleitos'], ['nao-sen', 'Candidatos a senador não eleitos'], ['nao-pref', 'Candidatos a prefeito não eleitos'], ['nao-ver', 'Candidatos a vereador não eleitos'], ['nao-depf', 'Candidatos a deputado federal não eleitos'], ['nao-depe', 'Candidatos a deputado estadual não eleitos'], ['nao-depd', 'Candidatos a deputado distrital não eleitos'],['gov', 'Governador(a)'], ['sen', 'Senadores'], ['pref', 'Prefeito(a)'], ['ver', 'Vereadores'], ['depf', 'Deputados federais'], ['depe', 'Deputados estaduais'], ['depd', 'Deputados distritais'], ['dep', 'Deputados mais votados nesta cidade (2022)']];
     root.querySelector('.ip-body').innerHTML = `
       ${selects()}
       <div class="ip-chips">${chips.map(k => `<button class="chip ${st.cargo === k ? 'on' : ''}" data-act="ip-cargo" data-k="${k}">${esc(CHIPS.find(c => c[0] === k)[1])}</button>`).join('')}</div>
-      ${showMand ? `<div class="ip-chips mand"><button class="chip ${st.mand === 'atual' ? 'on' : ''}" data-act="ip-mand" data-k="atual">Mandato atual</button><button class="chip ${st.mand === 'e26' ? 'on' : ''}" data-act="ip-mand" data-k="e26">Eleitos em 2026 (posse 2027)</button></div>` : ''}
+      ${showMand ? `<div class="ip-chips mand"><button class="chip ${st.mand === 'atual' ? 'on' : ''}" data-act="ip-mand" data-k="atual">${mandNomes[0]}</button><button class="chip ${st.mand === 'e26' ? 'on' : ''}" data-act="ip-mand" data-k="e26">${mandNomes[1]}</button></div>` : ''}
       <input class="input ip-q" type="search" placeholder="Buscar qualquer político do Brasil pelo nome…" value="${esc(st.q)}" data-ip="q">
       ${nacionalHtml()}
       <nav class="ip-crumbs">${crumbs.join('<i>›</i>')}</nav>
@@ -630,9 +690,9 @@
         ${st.loading ? '' : `<div class="ip-zoom"><button data-act="ip-zoom" data-z="in">+</button><button data-act="ip-zoom" data-z="out">−</button><button data-act="ip-zoom" data-z="reset">⤢</button></div>`}
       </div>
       ${st.loading ? '' : legenda()}
-      <p class="ip-hint">${!st.uf ? 'Toque em um estado para ver os políticos de lá. Toque numa foto para ver a carreira.' : !st.mun ? 'Toque em uma cidade para ver prefeito e vereadores. Os deputados aparecem na cidade onde tiveram mais votos' + (st.cargo === 'todos' ? ' (para ver os deputados estaduais no mapa, toque em “Dep. estaduais”)' : '') + '. Use dois dedos ou os botões para dar zoom — os nomes aparecem ao aproximar.' : st.bairros && st.bairros.length ? 'Os pontos são os bairros (pelos locais de votação). Cada vereador aparece no bairro onde teve mais votos. Toque num bairro para filtrar.' : 'Toque numa foto para ver a carreira.'}</p>
+      <p class="ip-hint">${st.cargo === 'nao' ? (st.bairro !== '' ? 'Candidatos que não se elegeram e foram bem votados neste bairro (aparecem no mapa).' : 'Candidatos que disputaram e não se elegeram, do mais votado para o menos votado. Eles aparecem só na lista abaixo. Toque em um para ver a carreira — inclusive quem nunca ganhou uma eleição.') : !st.uf ? 'Toque em um estado para ver os políticos de lá. Toque numa foto para ver a carreira.' : !st.mun ? 'Toque em uma cidade para ver prefeito e vereadores. Os deputados aparecem na cidade onde tiveram mais votos' + (st.cargo === 'todos' ? ' (para ver os deputados estaduais no mapa, toque em “Dep. estaduais”)' : '') + '. Use dois dedos ou os botões para dar zoom — os nomes aparecem ao aproximar.' : st.bairros && st.bairros.length ? 'Os pontos são os bairros (pelos locais de votação). Cada vereador aparece no bairro onde teve mais votos. Toque num bairro para filtrar.' : 'Toque numa foto para ver a carreira.'}</p>
       <h3 class="ip-h">${esc(titulo())} <small>${lista.length} político(s)</small></h3>
-      ${ORD.filter(([k]) => grupos[k]).map(([k, nm]) => `<h4 class="ip-g">${esc(nm)}</h4><div class="ip-list">${grupos[k].map(cardPessoa).join('')}</div>`).join('') || (st.loading ? '' : `<div class="ip-msg">${st.q.trim().length >= 3 ? 'Ninguém com esse nome neste lugar — veja a busca em todo o Brasil acima.' : st.est || !st.uf ? 'Nenhum político encontrado com esse filtro.' : 'Os dados deste estado ainda estão sendo preparados no servidor. Tente de novo em alguns minutos.'}</div>`)}
+      ${ORD.filter(([k]) => grupos[k]).map(([k, nm]) => `<h4 class="ip-g">${esc(nm)}</h4><div class="ip-list">${grupos[k].slice(0, 120).map(cardPessoa).join('')}</div>${grupos[k].length > 120 ? `<p class="ip-hint">Mostrando os 120 mais votados de ${grupos[k].length}. Use a busca acima para achar alguém pelo nome.</p>` : ''}`).join('') || (st.loading ? '' : `<div class="ip-msg">${st.cargo === 'nao' && st.naoMsg ? esc(st.naoMsg) : st.q.trim().length >= 3 ? 'Ninguém com esse nome neste lugar — veja a busca em todo o Brasil acima.' : st.est || !st.uf ? 'Nenhum político encontrado com esse filtro.' : 'Os dados deste estado ainda estão sendo preparados no servidor. Tente de novo em alguns minutos.'}</div>`)}
       <p class="ip-src">Fontes oficiais: TSE (candidatos eleitos, votos e locais de votação), Câmara dos Deputados, Senado Federal, IBGE (mapas).</p>`;
     if (!st.loading) mountMap();
   }
@@ -717,8 +777,9 @@
     if (nac || nacCarregando) return;
     nacCarregando = true;
     try {
-      const [idx, cam] = await Promise.all([
+      const [idx, idxNao, cam] = await Promise.all([
         getJSON(dataUrl('busca.json')).catch(() => ({ cols: [], rows: [] })),
+        getJSON(dataUrl('busca-nao.json')).catch(() => ({ cols: [], rows: [] })),
         (async () => {
           let todos = [];
           for (let pg = 1; pg <= 7; pg++) {
@@ -734,6 +795,7 @@
       const c = idx.cols || [];
       nac = {
         tse: (idx.rows || []).map(r => { const o = {}; c.forEach((k, i) => { o[k] = r[i]; }); o.f = fold(o.n) + ' ' + fold(o.nc) + ' ' + fold(o.p); return o; }),
+        nao: (idxNao.rows || []).map(r => { const o = {}; (idxNao.cols || []).forEach((k, i) => { o[k] = r[i]; }); o.f = fold(o.n) + ' ' + fold(o.p); return o; }),
         cam: cam.map(d => Object.assign(d, { f: fold(d.nome) + ' ' + fold(d.siglaPartido) })),
       };
     } catch (e) { nac = { tse: [], cam: [] }; }
@@ -775,7 +837,21 @@
         if (ok(fold(x.n) + ' ' + fold(x.nc) + ' ' + fold(x.p))) out.push({ p: fromTSE(x, 'ver', st.uf, { local: m.nm }), info: `${m.nm} (${st.uf}) · vereador(a) eleito(a) em 2024` });
       }));
     }
-    return out.slice(0, 80);
+    // candidatos que não se elegeram (governador, senador, deputados e prefeito em todo o Brasil)
+    (nac.nao || []).filter(o => ok(o.f)).sort((a, b) => (b.v || 0) - (a.v || 0)).slice(0, 40).forEach(o => {
+      const cargo = COD[o.c]; if (!cargo) return;
+      const local = o.c === '11' ? o.mn : (UFS[o.uf] || [o.uf])[0];
+      const p = fromCand([o.sq, o.n, '', o.p, '', o.v, o.st, o.ue], o.c, o.a, o.uf, { local });
+      out.push({ p, info: `${local}${o.c === '11' ? ' (' + o.uf + ')' : ''} · ${SIT[o.st] || 'não eleito(a)'} em ${o.a} · ${intl(o.v)} votos` });
+    });
+    // candidatos a vereador não eleitos da cidade aberta
+    if (st.candCid && st.candCid.d) {
+      const ci = cityInfo();
+      (st.candCid.d['13'] || []).filter(r => ok(fold(r[1]) + ' ' + fold(r[2]) + ' ' + fold(r[3]))).slice(0, 30).forEach(r => {
+        out.push({ p: fromCand(r, '13', 2024, st.uf, { local: ci && ci.nome }), info: `${ci ? ci.nome : ''} · ${SIT[r[6]] || 'não eleito(a)'} em 2024 · ${intl(r[5])} votos` });
+      });
+    }
+    return out.slice(0, 120);
   }
   function nacionalHtml() {
     const q = st.q.trim();
@@ -803,10 +879,10 @@
       <main class="detail pf" style="--pc:${col}">
         <div class="pf-hero">
           <span class="pf-ph"><span>${esc(iniciais(p.nome))}</span>${fotos.length ? `<img src="${esc(fotos[0])}" data-alt="${esc(fotos.slice(1).join('|'))}" alt="" onerror="window.ipImgErr(this)">` : ''}</span>
-          <div><h2>${esc(p.nome)}</h2><p>${esc(CARGOS[p.cargo] || '')}${local ? ' · ' + esc(local) : ''}</p><span class="pf-party">${esc(p.partido || '')}</span>${p.posse2027 ? '<span class="pf-tag">Eleito(a) em 2026 · posse em 2027</span>' : ''}</div>
+          <div><h2>${esc(p.nome)}</h2><p>${p.naoEleito ? 'Candidato(a) a ' + esc((CARGOS[p.cargo] || '').toLowerCase()) : esc(CARGOS[p.cargo] || '')}${local ? ' · ' + esc(local) : ''}</p><span class="pf-party">${esc(p.partido || '')}</span>${p.posse2027 ? '<span class="pf-tag">Eleito(a) em 2026 · posse em 2027</span>' : ''}${p.naoEleito ? `<span class="pf-tag nao">${esc(SIT[p.naoEleito] || 'não eleito(a)')} em ${p.ano}</span>` : ''}</div>
         </div>
         <div class="pf-facts">
-          ${p.votos ? `<div><b>${intl(p.votos)}</b><small>votos na eleição de ${p.ano}${p.qp ? ' (eleito por ' + esc(p.qp) + ')' : ''}</small></div>` : ''}
+          ${p.votos ? `<div><b>${intl(p.votos)}</b><small>votos na eleição de ${p.ano}${p.qp ? ' (eleito por ' + esc(p.qp) + ')' : ''}${p.naoEleito ? ' — ' + esc(SIT[p.naoEleito] || 'não eleito(a)') : ''}</small></div>` : ''}
           ${p.numero ? `<div><b>${esc(p.numero)}</b><small>número na urna</small></div>` : ''}
           ${p.ocupacao ? `<div><b>${esc(p.ocupacao)}</b><small>ocupação declarada</small></div>` : ''}
           ${p.instrucao ? `<div><b>${esc(p.instrucao)}</b><small>escolaridade</small></div>` : ''}

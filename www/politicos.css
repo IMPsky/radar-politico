@@ -95,3 +95,4 @@
 .ip-leg i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .ip-leg b { color: var(--muted); font-weight: 600; }
 .ip-areas path[style*="fill:"]:hover, .ip-areas path[style*="fill:"]:active { filter: brightness(1.2); }
+.pf-tag.nao { background: #4a1414; color: #ff9b9b; }

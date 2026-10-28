@@ -93,37 +93,56 @@ def por_uf(n):
     return bool(m) and m.group(1).upper() not in ('BR',)
 
 
-def eleitos(ano):
-    """sq -> dados do candidato eleito (titulares)."""
+def sit_code(sit):
+    sit = sit.upper()
+    if sit.startswith('ELEITO'):
+        return 'e'
+    if sit.startswith('SUPLENTE'):
+        return 's'
+    if '2' in sit and 'TURNO' in sit:
+        return '2'
+    if 'ELEITO' in sit:  # NÃO ELEITO
+        return 'n'
+    return 'x'  # sem situação (renúncia, indeferido, etc.)
+
+
+def candidatos(ano):
+    """(eleitos, nao_eleitos): sq -> dados do candidato. Vale a situação do último turno disputado."""
     z = baixar(URL_CAND.format(a=ano), f'/tmp/cand_{ano}.zip')
     if not z:
-        return {}
-    out = {}
+        return {}, {}
+    todos, turno = {}, {}
     for idx, r in ler_csv(z, por_uf):
         try:
-            sit = r[idx['DS_SIT_TOT_TURNO']].upper()
-            if not sit.startswith('ELEITO'):
-                continue
             c = r[idx['CD_CARGO']]
             if c not in ('3', '5', '6', '7', '8', '11', '13'):
                 continue
             g = lambda *k: (r[col(idx, *k)] if col(idx, *k) is not None else '').strip()
             sq = g('SQ_CANDIDATO')
-            out[sq] = {
+            t = int(g('NR_TURNO') or 1)
+            if sq in turno and turno[sq] > t:
+                continue
+            turno[sq] = t
+            sit = g('DS_SIT_TOT_TURNO').upper()
+            todos[sq] = {
                 'sq': sq, 'c': c, 'uf': g('SG_UF'), 'ue': g('SG_UE'), 'mn': titulo(g('NM_UE')),
                 'n': titulo(g('NM_URNA_CANDIDATO')), 'nc': titulo(g('NM_CANDIDATO')), 'nr': g('NR_CANDIDATO'),
                 'p': g('SG_PARTIDO'), 'oc': g('DS_OCUPACAO').capitalize(), 'gi': g('DS_GRAU_INSTRUCAO').capitalize(),
-                's': 'QP' if 'QP' in sit else ('Média' if 'DIA' in sit else ''), 'a': ano,
+                's': 'QP' if 'QP' in sit else ('Média' if 'DIA' in sit else ''), 'a': ano, 'st': sit_code(sit),
             }
-        except (KeyError, IndexError):
+        except (KeyError, IndexError, ValueError):
             continue
-    print(f'  {ano}: {len(out)} eleitos', flush=True)
     apagar(z)
-    return out
+    el = {sq: e for sq, e in todos.items() if e['st'] == 'e'}
+    outros = {sq: e for sq, e in todos.items() if e['st'] != 'e'}
+    print(f'  {ano}: {len(el)} eleitos, {len(outros)} não eleitos', flush=True)
+    return el, outros
 
 
-def votos(ano, sqs):
-    """Total de votos e votos por cidade (TSE) dos candidatos em sqs."""
+def votos(ano, sqs, sqs_mun=None):
+    """Total de votos (todos em sqs) e votos por cidade (só para sqs_mun; padrão = sqs)."""
+    if sqs_mun is None:
+        sqs_mun = sqs
     z = baixar(URL_MUNZONA.format(a=ano), f'/tmp/munzona_{ano}.zip')
     tot, mun, nomes = defaultdict(int), defaultdict(lambda: defaultdict(int)), {}
     if not z:
@@ -139,9 +158,10 @@ def votos(ano, sqs):
                 tot[sq + '|2'] += v
                 continue
             tot[sq] += v
-            cm = r[idx['CD_MUNICIPIO']]
-            mun[sq][cm] += v
-            nomes[cm] = titulo(r[idx['NM_MUNICIPIO']])
+            if sq in sqs_mun:
+                cm = r[idx['CD_MUNICIPIO']]
+                mun[sq][cm] += v
+                nomes[cm] = titulo(r[idx['NM_MUNICIPIO']])
         except (KeyError, IndexError, ValueError):
             continue
     apagar(z)
@@ -267,12 +287,10 @@ def bairros(uf, el24):
 def main():
     os.makedirs(OUT, exist_ok=True)
     so = [u.upper() for u in sys.argv[1:]] or UFS
-    el22, el24, el26 = eleitos(2022), eleitos(2024), eleitos(2026)
-    sq_dep = {sq for sq, e in el22.items() if e['c'] in ('6', '7', '8', '3', '5')}
-    t22, m22, nomes22 = votos(2022, sq_dep)
-    sq26 = set(el26)
-    t26, m26, nomes26 = votos(2026, sq26) if sq26 else ({}, {}, {})
-    t24, _, _ = votos(2024, set(el24))
+    (el22, ou22), (el24, ou24), (el26, ou26) = candidatos(2022), candidatos(2024), candidatos(2026)
+    t22, m22, nomes22 = votos(2022, set(el22) | set(ou22), set(el22))
+    t26, m26, nomes26 = votos(2026, set(el26) | set(ou26), set(el26)) if el26 or ou26 else ({}, {}, {})
+    t24, _, _ = votos(2024, set(el24) | set(ou24), set())
     index = []
     gov_path = os.path.join(OUT, 'governadores.json')
     try:
@@ -303,6 +321,27 @@ def main():
             m['11'] = ordem(m['11'])
             m['13'] = ordem(m['13'])
         tam2 = dump(os.path.join(OUT, f'{uf.lower()}-mun.json'), {'uf': uf, 'ano': 2024, 'ele': ELE_ID[2024], 'mun': mun})
+        # candidatos não eleitos (estado: 2022 e 2026; cidades: 2024)
+        def linha(e, tot):
+            return [e['sq'], e['n'], e['nc'] if e['nc'] != e['n'] else '', e['p'], e['nr'], tot.get(e['sq'] + '|2') or tot.get(e['sq']) or 0, e['st'], e['ue']]
+        nao = {}
+        for ano, ou, tot in ((2022, ou22, t22), (2026, ou26, t26)):
+            gr = defaultdict(list)
+            for e in ou.values():
+                if e['uf'] == uf:
+                    l = linha(e, tot)
+                    if l[5] > 0 or e['st'] == '2':
+                        gr[e['c']].append(l)
+            nao[str(ano)] = {c: sorted(l, key=lambda x: -x[5]) for c, l in gr.items()}
+        dump(os.path.join(OUT, 'cand', f'{uf.lower()}.json'), nao)
+        porcid = defaultdict(lambda: defaultdict(list))
+        for e in ou24.values():
+            if e['uf'] == uf:
+                l = linha(e, t24)
+                if l[5] > 0:
+                    porcid[e['ue']][e['c']].append(l)
+        for cm, d in porcid.items():
+            dump(os.path.join(OUT, 'cand', uf.lower(), f'{cm}.json'), {c: sorted(l, key=lambda x: -x[5]) for c, l in d.items()})
         nb = 0
         if uf in BAIRRO_UFS:
             try:
@@ -327,6 +366,18 @@ def main():
                            e['mn'] if e['c'] == '11' else '', e['a'], v])
     if len(so) == len(UFS):
         dump(os.path.join(OUT, 'busca.json'), {'cols': cols, 'rows': linhas})
+        # não eleitos (governador, senador, deputados e prefeito) para a busca por nome
+        cols2 = ['sq', 'n', 'p', 'c', 'uf', 'ue', 'mn', 'a', 'v', 'st']
+        linhas2 = []
+        for base, tot in ((ou22, t22), (ou26, t26), (ou24, t24)):
+            for e in base.values():
+                if e['c'] == '13':
+                    continue
+                v = tot.get(e['sq'] + '|2') or tot.get(e['sq']) or 0
+                if v <= 0 and e['st'] != '2':
+                    continue
+                linhas2.append([e['sq'], e['n'], e['p'], e['c'], e['uf'], e['ue'], e['mn'] if e['c'] == '11' else '', e['a'], v, e['st']])
+        dump(os.path.join(OUT, 'busca-nao.json'), {'cols': cols2, 'rows': linhas2})
     idx_path = os.path.join(OUT, 'index.json')
     antigo = {}
     try:
